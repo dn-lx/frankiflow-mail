@@ -1,4 +1,4 @@
-const CACHE = 'frankiflow-mail-dev-v1';
+const CACHE = 'frankiflow-mail-dev-v2';
 const SHELL = [
   '/',
   '/index.html',
@@ -30,7 +30,7 @@ self.addEventListener('fetch', event => {
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    fetch(request)
+    fetch(request, { cache: 'no-store' })
       .then(response => {
         if (response.ok) {
           const clone = response.clone();
