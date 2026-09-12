@@ -9,7 +9,7 @@ const root = document.querySelector('#app');
 const toastStack = document.createElement('div'); toastStack.className='toast-stack'; document.body.append(toastStack);
 const state = {
   session:null, messages:[], accounts:[], labels:[], messageLabels:[], contacts:[], templates:[], signatures:[], settings:null,
-  folder:'inbox', category:'all', activeId:null, selected:new Set(), search:'', loading:true,
+  folder:'inbox', category:'all', mobileQuickFilter:'all', activeId:null, selected:new Set(), search:'', loading:true,
   composer:null, commandOpen:false, filters:[], realtimeChannel:null
 };
 
@@ -92,9 +92,20 @@ function advancedMatch(m,query){
 function currentMessages(){
   let list=state.folder==='starred'?state.messages.filter(m=>m.is_starred&&m.folder!=='trash'):state.messages.filter(m=>effectiveFolder(m)===state.folder);
   list=list.filter(m=>advancedMatch(m,state.search));
+  const mobileInbox=state.folder==='inbox'&&window.matchMedia?.('(max-width: 820px)').matches;
+  if(mobileInbox&&state.mobileQuickFilter&&state.mobileQuickFilter!=='all'){
+    const f=state.mobileQuickFilter;
+    if(f==='unread')list=list.filter(m=>!m.is_read);
+    if(f==='starred')list=list.filter(m=>m.is_starred);
+    if(f==='attachments')list=list.filter(m=>m.has_attachments);
+    if(f==='info'||f==='mail')list=list.filter(m=>{
+      const labelNames=labelsFor(m.id).map(l=>String(l.name||'').toLowerCase());
+      const account=String(accountForMessage(m)?.address||'').toLowerCase();
+      return labelNames.includes(f)||account===`${f}@frankiflow.de`;
+    });
+  }
   return list.sort((a,b)=>(b.is_pinned-a.is_pinned)||new Date(b.received_at||b.sent_at||b.created_at)-new Date(a.received_at||a.sent_at||a.created_at));
 }
-
 function renderApp(){
   applyTheme();
   const user=currentUser();
@@ -110,8 +121,8 @@ function renderApp(){
     </aside>
     <section class="mail-list">
       <div class="topbar"><div class="search-wrap">${icon('search')}<input id="search" class="search" placeholder="Search mail — try from:, subject:, is:unread, has:attachment" value="${esc(state.search)}"><span class="search-kbd">/</span></div><button class="icon-btn" id="filterBtn" title="Search tips">${icon('tune')}</button><button class="icon-btn" id="notifyBtn" title="Desktop notifications">${icon(typeof Notification!=='undefined'&&Notification.permission==='granted'?'notifications_active':'notifications')}</button><button class="icon-btn" id="refreshBtn" title="Refresh">${icon('refresh')}</button><button class="icon-btn" id="themeBtn" title="Theme">${icon('dark_mode')}</button></div>
-      <div class="list-heading"><div class="heading-row"><input class="check" id="selectAll" type="checkbox"><h2>${folderTitle()}</h2><span class="subtle">${currentMessages().length} messages</span></div>${state.folder==='trash'?`<div class="trash-tools"><span class="subtle">Automatically deleted after 10 days.</span><button class="btn btn-danger-soft" id="emptyTrashBtn">${icon('delete_forever')} Empty trash</button></div>`:''}</div>
-      <div id="bulkMount"></div><div class="filter-hint">Tip: press <b>C</b> to compose, <b>J/K</b> to move, <b>E</b> to archive, <b>?</b> for shortcuts.</div>
+      <div class="list-heading"><div class="heading-row"><input class="check" id="selectAll" type="checkbox"><h2>${folderTitle()}</h2><span class="subtle" id="messageCount">${currentMessages().length} messages</span></div>${state.folder==='trash'?`<div class="trash-tools"><span class="subtle">Automatically deleted after 10 days.</span><button class="btn btn-danger-soft" id="emptyTrashBtn">${icon('delete_forever')} Empty trash</button></div>`:''}</div>
+      ${state.folder==='inbox'?`<div class="mobile-inbox-filter" aria-label="Inbox quick filters"><button class="mobile-filter-chip ${state.mobileQuickFilter==='all'?'active':''}" data-mobile-filter="all">All</button><button class="mobile-filter-chip ${state.mobileQuickFilter==='unread'?'active':''}" data-mobile-filter="unread">Unread</button><button class="mobile-filter-chip ${state.mobileQuickFilter==='starred'?'active':''}" data-mobile-filter="starred">Starred</button><button class="mobile-filter-chip ${state.mobileQuickFilter==='attachments'?'active':''}" data-mobile-filter="attachments">Attachments</button><button class="mobile-filter-chip ${state.mobileQuickFilter==='info'?'active':''}" data-mobile-filter="info">Info</button><button class="mobile-filter-chip ${state.mobileQuickFilter==='mail'?'active':''}" data-mobile-filter="mail">Mail</button></div>`:''}<div id="bulkMount"></div><div class="filter-hint">Tip: press <b>C</b> to compose, <b>J/K</b> to move, <b>E</b> to archive, <b>?</b> for shortcuts.</div>
       <div class="messages" id="messages"></div>
     </section>
     <section class="reader" id="reader"></section>
@@ -132,10 +143,11 @@ function wireShell(){
   searchEl.onkeydown=e=>{if(e.key==='Escape'){state.search='';e.target.value='';renderList();}};
   document.querySelector('#selectAll').onchange=e=>{const rows=currentMessages();state.selected.clear();if(e.target.checked)rows.forEach(m=>state.selected.add(m.id));renderList();renderBulk();};
   document.querySelector('#filterBtn').onclick=showSearchHelp;const mobileMore=document.querySelector('#mobileMore');mobileMore.onclick=()=>showPopover(mobileMore,[['Settings','settings',openSettings],['Refresh','refresh',()=>loadAll(true)],['Sign out','logout',()=>supabase.auth.signOut()]]);
+  document.querySelectorAll('[data-mobile-filter]').forEach(b=>b.onclick=()=>{state.mobileQuickFilter=b.dataset.mobileFilter||'all';state.selected.clear();state.activeId=null;document.querySelectorAll('[data-mobile-filter]').forEach(x=>x.classList.toggle('active',x.dataset.mobileFilter===state.mobileQuickFilter));renderList();renderReader();renderBulk();});
   document.querySelectorAll('[data-label]').forEach(b=>b.onclick=()=>{state.search=`label:${state.labels.find(l=>l.id===b.dataset.label)?.name||''}`;switchFolder('inbox');});
   document.querySelector('#newLabel')?.addEventListener('click',()=>openLabelManager(true));
 }
-function switchFolder(folder){state.folder=folder;state.activeId=null;state.selected.clear();state.category='all';renderApp();}
+function switchFolder(folder){state.folder=folder;state.activeId=null;state.selected.clear();state.category='all';state.mobileQuickFilter='all';renderApp();}
 function toggleTheme(){const cur=state.settings?.theme||'system';const next=cur==='dark'?'light':'dark';saveSettings({theme:next});}
 
 function renderBulk(){
@@ -165,7 +177,7 @@ async function bulkAction(action){
 }
 
 function renderList(){
-  const box=document.querySelector('#messages');if(!box)return;const list=currentMessages();
+  const box=document.querySelector('#messages');if(!box)return;const list=currentMessages();const countEl=document.querySelector('#messageCount');if(countEl)countEl.textContent=`${list.length} message${list.length===1?'':'s'}`;
   if(!list.length){box.innerHTML=`<div class="empty"><div>${icon(state.search?'search_off':'inbox')}<strong>${state.search?'No matching mail':'Nothing here'}</strong>${state.search?'Try another search or remove a filter.':'This folder is clean.'}</div></div>`;return;}
   box.innerHTML=list.map(m=>{const ls=labelsFor(m.id);const th=threadFor(m);return`<article class="mail-row ${m.is_read?'':'unread'} ${state.activeId===m.id?'active':''}" data-id="${m.id}"><input class="check row-check" type="checkbox" ${state.selected.has(m.id)?'checked':''}><button class="star-btn ${m.is_starred?'on':''}" data-star="${m.id}" title="Star">${icon(m.is_starred?'star':'star')}</button><div class="avatar">${initials(senderName(m))}</div><div class="mail-main"><div class="sender-line"><span class="sender">${esc(senderName(m))}</span>${th.length>1?`<span class="thread-count">${th.length}</span>`:''}${m.is_pinned?icon('keep','pin-on'):''}</div><div class="subject-line">${m.priority==='high'?'<span class="priority-dot" title="High priority"></span>':''}<span class="subject">${esc(m.subject||'(no subject)')}</span></div><div class="preview">${esc(m.preview||stripHtml(m.html_body)||m.text_body||'')}</div>${ls.length?`<div class="row-labels">${ls.slice(0,3).map(l=>`<span class="mini-label" style="background:${esc(l.color)}">${esc(l.name)}</span>`).join('')}</div>`:''}</div><div class="row-meta"><time class="time">${fmtDate(m.received_at||m.sent_at||m.scheduled_at||m.created_at)}</time><div class="row-icons">${m.has_attachments?icon('attach_file'):''}${m.folder==='snoozed'?icon('schedule'):''}</div></div></article>`}).join('');
   box.querySelectorAll('.mail-row').forEach(row=>row.onclick=async e=>{if(e.target.closest('.row-check,.star-btn'))return;const m=state.messages.find(x=>x.id===row.dataset.id);if(m?.folder==='drafts'||m?.direction==='draft'){openComposerFromDraft(m);return;}state.activeId=row.dataset.id;if(m&&!m.is_read&&m.direction==='inbound'&&state.settings?.mark_read_on_open!==false)await patchMessage(m.id,{is_read:true},false);renderList();renderReader();});
