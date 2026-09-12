@@ -131,3 +131,12 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,[contenteditable
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
 }
+
+
+/* FrankiFlow Mail power upgrades */
+.address-row select { flex: 1; min-width: 0; border: 0; background: transparent; color: inherit; font: inherit; padding: 9px 6px; outline: none; }
+.trash-tools { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0 0 34px; }
+.btn-danger-soft { color: #b42318; border-color: rgba(180,35,24,.25); }
+.signature { opacity:.88; margin-top:14px; }
+[data-theme="dark"] .address-row select { color: #f3f6f8; }
+@media (max-width: 760px) { .trash-tools { padding-left: 0; align-items:flex-start; flex-direction:column; } }
