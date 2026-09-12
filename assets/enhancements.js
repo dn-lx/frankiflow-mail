@@ -1,3 +1,5 @@
+import { CONFIG } from './config.js';
+
 const qs = (s, root = document) => root.querySelector(s);
 let deferredInstallPrompt = null;
 let lastVisibleRefresh = Date.now();
@@ -25,6 +27,7 @@ function updateUnreadTitle() {
 }
 
 function decorateBrand() {
+  if (CONFIG.mode !== 'develop') return;
   const words = qs('.brand .words');
   if (!words || qs('.dev-pill', words)) return;
   const badge = document.createElement('span');

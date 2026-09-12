@@ -37,7 +37,8 @@ jobs:
           test -f _site/assets/modern.css
           test -f _site/assets/enhancements.js
           test -f _site/assets/config.js
-          grep -q "mode: 'develop'" _site/assets/config.js
+          grep -q "mail-frankiflow.shipstatic.com" _site/assets/config.js
+          grep -q "isDevelopment ? 'develop' : 'production'" _site/assets/config.js
           grep -q "noindex,nofollow" _site/index.html
 
       - name: Deploy development to ShipStatic
