@@ -1,4 +1,4 @@
-const CACHE = 'frankiflow-mail-dev-v6';
+const CACHE = 'frankiflow-mail-dev-v7';
 const SHELL = [
   '/',
   '/index.html',
