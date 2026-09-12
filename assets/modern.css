@@ -1,0 +1,204 @@
+/* FrankiFlow Mail — modern experience layer */
+:root{
+  --ff-glow:0 24px 70px rgba(12,52,71,.10);
+  --ff-focus:0 0 0 4px rgba(36,163,199,.12);
+  --ff-ease:cubic-bezier(.2,.8,.2,1);
+}
+
+html{background:var(--bg)}
+body{letter-spacing:-.005em}
+button,.mail-row,.thread-card,.composer,.search,.category-tab,.nav-btn{transition:all .18s var(--ff-ease)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,[contenteditable="true"]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Desktop shell */
+@media(min-width:821px){
+  body{background:linear-gradient(135deg,var(--bg),var(--surface-3))}
+  .shell{gap:1px;background:var(--line)}
+  .sidebar{box-shadow:12px 0 40px rgba(2,25,35,.08);z-index:4}
+  .mail-list,.reader{position:relative}
+}
+
+.sidebar{background:
+  radial-gradient(circle at 20% 0%,rgba(36,163,199,.18),transparent 32%),
+  linear-gradient(180deg,#0c3447 0%,#092b3a 72%,#061f2b 100%)}
+.brand-mark{border-radius:14px;box-shadow:0 10px 28px rgba(0,0,0,.18)}
+.brand strong{font-size:15px;letter-spacing:-.02em}
+.brand small{line-height:1.35}
+.dev-pill{display:inline-flex;align-items:center;margin-top:6px;padding:3px 7px;border-radius:999px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.82);font-size:8px;font-weight:800;letter-spacing:.11em;text-transform:uppercase}
+.compose-main{min-height:46px;border-radius:15px;box-shadow:0 12px 30px rgba(0,0,0,.16)}
+.compose-main:hover{transform:translateY(-2px);box-shadow:0 16px 34px rgba(0,0,0,.2)}
+.nav-btn{min-height:38px}
+.nav-btn:hover{transform:translateX(2px)}
+.nav-btn.active{background:linear-gradient(90deg,rgba(255,255,255,.16),rgba(255,255,255,.08));box-shadow:inset 3px 0 0 rgba(255,255,255,.8)}
+.account-box{backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+
+/* Search and command surface */
+.topbar{background:color-mix(in srgb,var(--surface) 90%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);position:sticky;top:0;z-index:10}
+.search{height:42px;border-radius:14px;background:var(--surface-3);font-weight:500}
+.search:hover{background:color-mix(in srgb,var(--surface-3) 78%,var(--surface))}
+.search:focus{box-shadow:var(--ff-focus)}
+.search-kbd{font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.connection-pill{height:30px;display:inline-flex;align-items:center;gap:6px;padding:0 9px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap}
+.connection-pill::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 0 3px color-mix(in srgb,var(--success) 16%,transparent)}
+.connection-pill.offline{color:var(--danger)}
+.connection-pill.offline::before{background:var(--danger);box-shadow:0 0 0 3px color-mix(in srgb,var(--danger) 16%,transparent)}
+
+.list-heading{background:var(--surface)}
+.heading-row h2{font-size:20px;letter-spacing:-.035em}
+.category-tabs{gap:7px;padding:2px 0 4px}
+.category-tab{padding:8px 11px;border:1px solid transparent}
+.category-tab.active{border-color:color-mix(in srgb,var(--brand-2) 20%,transparent);box-shadow:0 5px 16px rgba(12,52,71,.06)}
+.filter-hint{opacity:.72}
+
+/* Message list */
+.messages{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.mail-row{margin:0 8px 4px;border:1px solid transparent;border-radius:13px;min-height:78px;padding-left:10px;padding-right:10px}
+.mail-row:hover{background:var(--surface-2);border-color:var(--line);transform:translateY(-1px);box-shadow:0 8px 22px rgba(12,52,71,.06)}
+.mail-row.active{background:linear-gradient(135deg,var(--brand-soft),color-mix(in srgb,var(--brand-soft) 70%,var(--surface)));border-color:color-mix(in srgb,var(--brand-2) 18%,var(--line));box-shadow:0 10px 26px rgba(12,52,71,.08)}
+.mail-row.unread:before{left:-1px;top:14px;bottom:14px;width:4px;border-radius:999px}
+.mail-row .avatar{box-shadow:inset 0 0 0 1px rgba(255,255,255,.2),0 4px 12px rgba(12,52,71,.12)}
+.sender{font-size:12.5px}
+.subject{font-size:12.5px}
+.preview{line-height:1.4}
+.mini-label{box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+.bulkbar{box-shadow:0 8px 24px rgba(12,52,71,.05)}
+
+/* Reader */
+.reader{background:linear-gradient(180deg,var(--surface-2),var(--bg))}
+.reader-head{background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);position:sticky;top:0;z-index:8}
+.reader-title{letter-spacing:-.02em}
+.reader-scroll{max-width:1040px;width:100%;margin:0 auto}
+.big-subject{font-size:clamp(22px,2vw,30px);line-height:1.15;letter-spacing:-.04em}
+.thread-card{border-radius:18px;box-shadow:0 10px 34px rgba(12,52,71,.06)}
+.thread-card:hover{box-shadow:0 16px 42px rgba(12,52,71,.09)}
+.thread-card-head{padding:15px 17px}
+.thread-body{padding:20px 18px;font-size:13.5px;line-height:1.72}
+.quick-reply{border-radius:18px;box-shadow:0 12px 34px rgba(12,52,71,.07)}
+.quick-reply-editor{border-radius:12px;background:var(--surface-2);padding:12px}
+.attachment-chip{transition:.16s var(--ff-ease)}
+.attachment-chip:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--brand-2) 30%,var(--line))}
+
+/* Composer */
+.composer{border-radius:22px;box-shadow:0 36px 110px rgba(0,0,0,.30);border-color:color-mix(in srgb,var(--brand-2) 18%,var(--line));overflow:hidden}
+.composer-head{height:58px;background:linear-gradient(110deg,#0c3447,#155b74);padding:0 16px}
+.composer-head strong{font-size:13px;letter-spacing:-.01em}
+.address-row{min-height:47px}
+.address-row input{font-size:12.5px}
+.composer-toolbar{padding:7px 10px;background:color-mix(in srgb,var(--surface-2) 80%,var(--surface))}
+.toolbar-btn{border-radius:9px}
+.composer-editor{font-size:14px;line-height:1.72;padding:20px}
+.composer-foot{padding:11px 13px;background:var(--surface)}
+.send-group .btn-primary{min-height:39px;padding-left:17px;padding-right:17px}
+
+/* Dialogs and floating controls */
+.modal-backdrop{background:rgba(3,17,24,.52);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
+.modal{border-radius:22px;box-shadow:0 34px 100px rgba(0,0,0,.28)}
+.popover{border-radius:15px;box-shadow:0 18px 55px rgba(0,0,0,.18)}
+.command{margin-top:10vh}
+.toast{border:1px solid rgba(255,255,255,.08);box-shadow:0 16px 50px rgba(0,0,0,.22)}
+
+/* Login */
+.login{background:
+  radial-gradient(circle at 15% 15%,rgba(36,163,199,.34),transparent 30%),
+  radial-gradient(circle at 85% 85%,rgba(21,91,116,.28),transparent 28%),
+  linear-gradient(145deg,#04161f,#0c3447 58%,#082a39)}
+.login-card{border-radius:30px;padding:34px;box-shadow:0 38px 110px rgba(0,0,0,.32);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.login-logo{width:58px;height:58px;border-radius:18px;font-size:22px;box-shadow:0 12px 30px rgba(12,52,71,.18)}
+.login h1{font-size:27px;letter-spacing:-.04em}
+
+/* Mobile */
+@media(max-width:820px){
+  .topbar{padding-left:10px;padding-right:10px}
+  .connection-pill{display:none}
+  .mail-row{margin-left:5px;margin-right:5px;border-radius:12px}
+  .reader-scroll{max-width:none}
+  .big-subject{font-size:22px}
+  .composer{border-radius:18px}
+  .mobile-nav{padding-bottom:env(safe-area-inset-bottom);height:calc(62px + env(safe-area-inset-bottom));box-shadow:0 -10px 30px rgba(12,52,71,.08)}
+  .mail-list{height:calc(100vh - 62px - env(safe-area-inset-bottom))}
+  .reader{bottom:calc(62px + env(safe-area-inset-bottom))}
+  .composer{bottom:calc(70px + env(safe-area-inset-bottom));height:calc(100vh - 85px - env(safe-area-inset-bottom))}
+}
+
+@media(max-width:520px){
+  .login-card{padding:26px;border-radius:24px}
+  .search-kbd{display:none}
+  .filter-hint{display:none}
+  .mail-row{min-height:72px}
+  .composer-editor{padding:16px}
+}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+}
+
+
+/* FrankiFlow Mail power upgrades */
+.address-row select { flex: 1; min-width: 0; border: 0; background: transparent; color: inherit; font: inherit; padding: 9px 6px; outline: none; }
+.trash-tools { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0 0 34px; }
+.btn-danger-soft { color: #b42318; border-color: rgba(180,35,24,.25); }
+.signature { opacity:.88; margin-top:14px; }
+[data-theme="dark"] .address-row select { color: #f3f6f8; }
+@media (max-width: 760px) { .trash-tools { padding-left: 0; align-items:flex-start; flex-direction:column; } }
+
+
+/* FrankiFlow Mail v2 settings, AI, signatures and context menu */
+.brand-mark .material-symbols-rounded,.login-logo .material-symbols-rounded{font-size:24px}
+.brand .words{display:flex;flex-direction:column;align-items:flex-start}
+[data-show-preview="false"] .mail-row .preview{display:none}
+@media(min-width:821px){body[data-preview-pane="off"] .shell{grid-template-columns:var(--sidebar-w) minmax(420px,1fr)}body[data-preview-pane="off"] .reader{display:none}}
+.ai-toolbar-btn{color:var(--brand-2)!important;background:color-mix(in srgb,var(--brand-soft) 70%,transparent)!important}
+.ai-assistant .ai-hero{display:flex;gap:12px;align-items:center;padding:12px;border-radius:14px;background:var(--brand-soft);margin-bottom:14px}.ai-hero>.material-symbols-rounded{font-size:28px;color:var(--brand-2)}.ai-hero strong,.ai-hero small{display:block}.ai-hero small{margin-top:3px;color:var(--muted)}.ai-note{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);padding-top:5px}
+.settings-hub{display:grid;gap:14px}.settings-section{border:1px solid var(--line);background:var(--surface-2);border-radius:16px;padding:14px}.settings-section h4{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:13px}.settings-grid{display:grid;gap:10px}.settings-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.settings-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.settings-actions{display:flex;flex-wrap:wrap;gap:8px}.settings-status{display:grid;gap:8px;color:var(--muted);font-size:12px}.settings-status span{display:flex;align-items:center;gap:8px}.account-settings{display:grid;gap:7px}.account-setting-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:11px;background:var(--surface)}.account-setting-row div{display:flex;flex-direction:column}.account-setting-row small{color:var(--muted);margin-top:2px}
+.signature-manager{display:grid;gap:12px}.rich-toolbar{display:flex;gap:5px;flex-wrap:wrap;padding:7px;border:1px solid var(--line);border-bottom:0;border-radius:12px 12px 0 0;background:var(--surface-2)}.rich-toolbar button{border:0;background:transparent;color:var(--muted);border-radius:8px;padding:7px;display:inline-flex;align-items:center;gap:5px}.rich-toolbar button:hover{background:var(--surface-3);color:var(--text)}.signature-editor{min-height:170px;max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:0 0 12px 12px;background:var(--surface);padding:14px;outline:none;line-height:1.5}.signature-editor:empty:before{content:attr(data-placeholder);color:var(--muted-2)}.signature-editor img{max-width:100%;height:auto}
+.context-menu{position:fixed;z-index:160;min-width:190px;padding:6px;background:var(--surface);border:1px solid var(--line);border-radius:13px;box-shadow:0 18px 55px rgba(0,0,0,.2)}.context-menu button{width:100%;border:0;background:transparent;color:var(--text);display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;text-align:left}.context-menu button:hover{background:var(--surface-3)}.context-menu button.danger{color:var(--danger)}
+.modal:has(.settings-hub),.modal:has(.signature-manager){width:min(820px,calc(100vw - 28px));max-height:min(86vh,900px)}.modal:has(.settings-hub) .modal-body,.modal:has(.signature-manager) .modal-body{overflow:auto}
+@media(max-width:720px){.settings-grid.two,.settings-grid.three{grid-template-columns:1fr}.settings-section{padding:12px}.context-menu{min-width:170px}.modal:has(.settings-hub),.modal:has(.signature-manager){width:calc(100vw - 18px)}}
+
+
+/* Settings account editor */
+.account-setting-row.editable{align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--line)}
+.account-setting-row.editable:last-child{border-bottom:0}
+.account-setting-main{flex:1;min-width:0}
+.account-setting-main>strong{display:block}
+.account-setting-main>small{display:block;color:var(--muted);margin-top:3px}
+.account-edit-grid{display:grid;grid-template-columns:minmax(180px,1fr) auto;gap:12px;align-items:end;margin-top:10px}
+.account-edit-grid label>span{display:block;font-size:10px;font-weight:700;color:var(--muted);margin-bottom:5px}
+.account-display-name{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 10px;outline:none}
+.account-display-name:focus{border-color:var(--brand-2);box-shadow:var(--ff-focus)}
+.account-default{display:flex!important;align-items:center;gap:7px;padding:9px 4px;white-space:nowrap}
+.account-default span{display:inline!important;margin:0!important}
+@media(max-width:620px){.account-edit-grid{grid-template-columns:1fr}.account-default{padding-left:0}}
+
+
+/* FrankiFlow Mail v4 polish */
+.account-setting-row.editable{display:grid!important;grid-template-columns:30px minmax(0,1fr);gap:12px;align-items:start!important;padding:14px!important;border:1px solid var(--line)!important;border-radius:13px!important;background:var(--surface)!important}
+.account-setting-row.editable>.material-symbols-rounded{margin-top:2px;color:var(--brand-2)}
+.account-setting-row .account-setting-main{display:block!important;min-width:0}
+.account-setting-row .account-edit-grid{display:grid!important;grid-template-columns:minmax(220px,1fr) auto!important;gap:14px!important;align-items:end!important;margin-top:12px!important}
+.account-setting-row .account-edit-grid label{display:block!important;min-width:0}
+.account-setting-row .account-default{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-end!important;min-height:40px}
+.account-display-name{box-sizing:border-box;height:40px}
+@media(max-width:620px){.account-setting-row .account-edit-grid{grid-template-columns:1fr!important}.account-setting-row .account-default{justify-content:flex-start!important}}
+
+/* Calm, narrow scrollbars; never show a horizontal label scrollbar. */
+*{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 45%,transparent) transparent}
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 42%,transparent);border:2px solid transparent;background-clip:content-box;border-radius:999px}
+*::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--muted) 62%,transparent);border:2px solid transparent;background-clip:content-box}
+.labels-scroll{overflow-y:auto!important;overflow-x:hidden!important;scrollbar-gutter:stable;padding-right:3px;min-width:0}
+.labels-scroll .nav-btn{width:100%;min-width:0;box-sizing:border-box}
+.labels-scroll .nav-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.gemini-badge{margin-left:auto;white-space:nowrap;border:1px solid color-mix(in srgb,var(--brand-2) 28%,var(--line));background:var(--surface);color:var(--brand-2);border-radius:999px;padding:5px 8px;font-size:9px;font-weight:800}
+.filter-list{display:grid;gap:8px;margin-bottom:14px}.filter-row{gap:8px}.status-pill{font-size:9px;font-weight:800;border-radius:999px;padding:4px 7px;background:color-mix(in srgb,var(--success) 13%,var(--surface));color:var(--success)}.status-pill.off{background:var(--surface-3);color:var(--muted)}
+.filter-builder{border-top:1px solid var(--line);padding-top:14px}.filter-subhead{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px}.filter-actions-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px;margin-top:12px}.filter-actions-grid label{display:flex;align-items:center;gap:8px;font-size:12px}
+.modal:has(.filter-builder){width:min(760px,calc(100vw - 28px));max-height:86vh}.modal:has(.filter-builder) .modal-body{overflow:auto}
+.meeting-scheduler{display:grid;gap:11px}.meeting-hero{display:flex;align-items:center;gap:10px;padding:12px;border-radius:13px;background:var(--brand-soft)}.meeting-hero>.material-symbols-rounded{color:var(--brand-2);font-size:28px}.meeting-hero strong,.meeting-hero small{display:block}.meeting-hero small{margin-top:3px;color:var(--muted)}
+.meeting-card{border:1px solid color-mix(in srgb,var(--brand-2) 22%,var(--line));background:color-mix(in srgb,var(--brand-soft) 55%,var(--surface));border-radius:12px;padding:12px 14px;margin-bottom:12px;line-height:1.55}.meeting-card>strong{display:block;font-size:14px;margin-bottom:6px}.meeting-card>div{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}.meeting-card .material-symbols-rounded{font-size:16px}.meeting-card p{margin:8px 0 0}.meeting-card a{color:var(--brand-2);font-weight:700}
+@media(max-width:620px){.filter-actions-grid{grid-template-columns:1fr}.gemini-badge{display:none}}
+
+/* Hide sidebar label scroll chrome while preserving wheel/touch scrolling. */
+.labels-scroll{scrollbar-width:none!important;-ms-overflow-style:none}
+.labels-scroll::-webkit-scrollbar{display:none}
