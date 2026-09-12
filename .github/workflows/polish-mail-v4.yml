@@ -1,0 +1,62 @@
+name: Polish FrankiFlow Mail v4
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - scripts/polish-mail-v4.py
+      - .github/workflows/polish-mail-v4.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: frankiflow-mail-v4-polish
+  cancel-in-progress: false
+
+jobs:
+  polish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply polish
+        run: |
+          python -m py_compile scripts/polish-mail-v4.py
+          python scripts/polish-mail-v4.py
+      - name: Validate application
+        run: |
+          node --check assets/app.js
+          node --check assets/enhancements.js
+          node --check sw.js
+          grep -q "<b>When:</b>" assets/app.js
+          grep -q "gemini-3.8-flash" assets/app.js
+          grep -q "labels-scroll::-webkit-scrollbar{display:none}" assets/modern.css
+          grep -q "frankiflow-mail-dev-v8" sw.js
+      - name: Functional helper self-test
+        run: |
+          node <<'NODE'
+          function icsEscape(v=''){return String(v).replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;')}
+          function icsUtc(v){return new Date(v).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z')}
+          const start='2026-09-14T08:00:00.000Z', end='2026-09-14T08:30:00.000Z';
+          const ics=['BEGIN:VCALENDAR','METHOD:REQUEST','BEGIN:VEVENT',`DTSTART:${icsUtc(start)}`,`DTEND:${icsUtc(end)}`,`SUMMARY:${icsEscape('Client, meeting')}`,'ATTENDEE;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:test@example.com','URL:https://teams.microsoft.com/l/meetup-join/test','END:VEVENT','END:VCALENDAR'].join('\r\n');
+          for (const token of ['BEGIN:VCALENDAR','METHOD:REQUEST','DTSTART:20260914T080000Z','DTEND:20260914T083000Z','SUMMARY:Client\\, meeting','ATTENDEE;ROLE=REQ-PARTICIPANT','teams.microsoft.com','END:VCALENDAR']) if(!ics.includes(token)) throw new Error('ICS self-test failed: '+token);
+          console.log('ICS self-test passed');
+          NODE
+      - name: Diff check
+        run: git diff --check
+      - name: Commit polish
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/app.js assets/modern.css sw.js
+          git commit -m "Polish Mail meeting rendering and sidebar scrolling"
+          git push origin HEAD:develop
