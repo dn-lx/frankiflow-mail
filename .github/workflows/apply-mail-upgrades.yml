@@ -1,0 +1,73 @@
+name: Apply FrankiFlow Mail upgrades
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - scripts/apply-mail-upgrades.py
+      - .github/workflows/apply-mail-upgrades.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: frankiflow-mail-upgrade
+  cancel-in-progress: false
+
+jobs:
+  upgrade:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate patcher syntax
+        run: python -m py_compile scripts/apply-mail-upgrades.py
+
+      - name: Apply upgrades
+        run: python scripts/apply-mail-upgrades.py
+
+      - name: JavaScript syntax checks
+        run: |
+          node --check assets/app.js
+          node --check assets/enhancements.js
+          node --check assets/config.js
+          node --check sw.js
+
+      - name: Verify required features exist
+        run: |
+          grep -q 'id="cFrom"' assets/app.js
+          grep -q 'hardDeleteMessages' assets/app.js
+          grep -q 'frankiflow_mail_signatures' assets/app.js
+          grep -q "postgres_changes" assets/app.js
+          grep -q 'requestNotifications' assets/app.js
+          grep -q 'trashed_at' assets/app.js
+          grep -q 'before:2026-09-01' assets/app.js
+          grep -q "frankiflow-mail-dev-v4" sw.js
+
+      - name: Diff integrity check
+        run: git diff --check
+
+      - name: Commit upgraded frontend
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/app.js assets/modern.css sw.js
+          if git diff --cached --quiet; then
+            echo "No frontend changes to commit."
+            exit 0
+          fi
+          git commit -m "Improve Mail trash senders signatures and realtime"
+          git push origin HEAD:develop
