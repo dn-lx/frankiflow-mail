@@ -1,0 +1,44 @@
+name: Apply mobile inbox quick filter
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - scripts/add-mobile-inbox-filter.py
+      - .github/workflows/apply-mobile-inbox-filter.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v6
+        with:
+          ref: develop
+
+      - name: Apply mobile filter patch
+        run: python scripts/add-mobile-inbox-filter.py
+
+      - name: Validate JavaScript
+        run: |
+          node --check assets/app.js
+          grep -q "mobileQuickFilter" assets/app.js
+          grep -q "data-mobile-filter=\"attachments\"" assets/app.js
+          grep -q "Mobile Inbox quick filters" assets/modern.css
+
+      - name: Commit changes
+        run: |
+          if git diff --quiet -- assets/app.js assets/modern.css; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/app.js assets/modern.css
+          git commit -m "Add mobile Inbox quick filters"
+          git push origin develop
