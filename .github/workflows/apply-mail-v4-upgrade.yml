@@ -1,0 +1,73 @@
+name: Apply FrankiFlow Mail v4 upgrade
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - scripts/upgrade-mail-v4.py
+      - .github/workflows/apply-mail-v4-upgrade.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: frankiflow-mail-v4-upgrade
+  cancel-in-progress: false
+
+jobs:
+  upgrade:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate upgrade script
+        run: python -m py_compile scripts/upgrade-mail-v4.py
+      - name: Apply upgrade
+        run: python scripts/upgrade-mail-v4.py
+      - name: Validate JavaScript
+        run: |
+          node --check assets/app.js
+          node --check assets/enhancements.js
+          node --check sw.js
+      - name: Verify requested changes
+        run: |
+          grep -q "Gemini-powered writing assistant" assets/app.js
+          grep -q "gemini-3.5-flash-lite" assets/app.js
+          grep -q "openMeetingScheduler" assets/app.js
+          grep -q "text/calendar; charset=utf-8; method=REQUEST" assets/app.js
+          grep -q "filterBody" assets/app.js
+          grep -q "filterAccount" assets/app.js
+          grep -q "filterStop" assets/app.js
+          grep -q "scrollbar-gutter:stable" assets/modern.css
+          grep -q "account-setting-row .account-edit-grid" assets/modern.css
+          grep -q "frankiflow-mail-dev-v7" sw.js
+          ! grep -q "CATEGORIES.map" assets/app.js
+          ! grep -q "gpt-5.6" assets/app.js
+          ! grep -q "OpenAI API key" assets/app.js
+      - name: Static meeting/filter self-test
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const app=fs.readFileSync('assets/app.js','utf8');
+          for(const token of ['BEGIN:VCALENDAR','METHOD:REQUEST','ATTENDEE;ROLE=REQ-PARTICIPANT','Microsoft Teams','Zoom','body_contains','has_attachment','label_id','stop_processing']) {
+            if(!app.includes(token)) throw new Error('Missing '+token);
+          }
+          console.log('Mail v4 static self-test passed');
+          NODE
+      - name: Diff check
+        run: git diff --check
+      - name: Commit upgrade
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/app.js assets/modern.css sw.js
+          git commit -m "Improve Mail layout filters meetings and Gemini AI"
+          git push origin HEAD:develop
