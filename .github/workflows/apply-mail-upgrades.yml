@@ -6,6 +6,7 @@ on:
       - develop
     paths:
       - scripts/apply-mail-upgrades.py
+      - scripts/run-mail-upgrades.py
       - .github/workflows/apply-mail-upgrades.yml
   workflow_dispatch:
 
@@ -34,12 +35,14 @@ jobs:
           python-version: '3.12'
 
       - name: Validate patcher syntax
-        run: python -m py_compile scripts/apply-mail-upgrades.py
+        run: |
+          python -m py_compile scripts/apply-mail-upgrades.py
+          python -m py_compile scripts/run-mail-upgrades.py
 
       - name: Apply upgrades
         run: |
           set +e
-          python scripts/apply-mail-upgrades.py > /tmp/mail-upgrade.log 2>&1
+          python scripts/run-mail-upgrades.py > /tmp/mail-upgrade.log 2>&1
           status=$?
           cat /tmp/mail-upgrade.log
           if [ "$status" -ne 0 ]; then
