@@ -198,3 +198,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,[contenteditable
 .meeting-scheduler{display:grid;gap:11px}.meeting-hero{display:flex;align-items:center;gap:10px;padding:12px;border-radius:13px;background:var(--brand-soft)}.meeting-hero>.material-symbols-rounded{color:var(--brand-2);font-size:28px}.meeting-hero strong,.meeting-hero small{display:block}.meeting-hero small{margin-top:3px;color:var(--muted)}
 .meeting-card{border:1px solid color-mix(in srgb,var(--brand-2) 22%,var(--line));background:color-mix(in srgb,var(--brand-soft) 55%,var(--surface));border-radius:12px;padding:12px 14px;margin-bottom:12px;line-height:1.55}.meeting-card>strong{display:block;font-size:14px;margin-bottom:6px}.meeting-card>div{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}.meeting-card .material-symbols-rounded{font-size:16px}.meeting-card p{margin:8px 0 0}.meeting-card a{color:var(--brand-2);font-weight:700}
 @media(max-width:620px){.filter-actions-grid{grid-template-columns:1fr}.gemini-badge{display:none}}
+
+/* Hide sidebar label scroll chrome while preserving wheel/touch scrolling. */
+.labels-scroll{scrollbar-width:none!important;-ms-overflow-style:none}
+.labels-scroll::-webkit-scrollbar{display:none}
