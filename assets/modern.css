@@ -242,3 +242,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,[contenteditable
   }
   .mobile-filter-chip:active{transform:scale(.97)}
 }
+
+
+/* Android/PWA background Web Push */
+.push-setting-card{margin-top:10px;padding:12px;border:1px solid color-mix(in srgb,var(--brand-2) 22%,var(--line));border-radius:13px;background:color-mix(in srgb,var(--brand-soft) 52%,var(--surface));display:grid;gap:10px}
+.push-setting-copy{display:grid;gap:4px}.push-setting-copy strong{display:flex;align-items:center;gap:7px;font-size:12px}.push-setting-copy strong .material-symbols-rounded{font-size:19px;color:var(--brand-2)}.push-setting-copy small{color:var(--muted);line-height:1.45}.push-setting-card .settings-actions .btn:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:620px){.push-setting-card .settings-actions{display:grid;grid-template-columns:1fr}.push-setting-card .settings-actions .btn{justify-content:center;width:100%}}
