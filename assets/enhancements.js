@@ -1,6 +1,7 @@
 const qs = (s, root = document) => root.querySelector(s);
 let deferredInstallPrompt = null;
 let lastVisibleRefresh = Date.now();
+let decorateScheduled = false;
 
 function onlineLabel() {
   return navigator.onLine ? 'Online' : 'Offline';
@@ -9,15 +10,18 @@ function onlineLabel() {
 function updateConnectionPill() {
   const pill = qs('#ffConnectionPill');
   if (!pill) return;
-  pill.textContent = onlineLabel();
+  const label = onlineLabel();
+  const title = navigator.onLine ? 'Connected' : 'No network connection';
+  if (pill.textContent !== label) pill.textContent = label;
   pill.classList.toggle('offline', !navigator.onLine);
-  pill.title = navigator.onLine ? 'Connected' : 'No network connection';
+  if (pill.title !== title) pill.title = title;
 }
 
 function updateUnreadTitle() {
   const countText = qs('[data-folder="inbox"] .count')?.textContent?.trim();
   const count = Number(countText || 0);
-  document.title = count > 0 ? `(${count}) FrankiFlow Mail` : 'FrankiFlow Mail';
+  const nextTitle = count > 0 ? `(${count}) FrankiFlow Mail` : 'FrankiFlow Mail';
+  if (document.title !== nextTitle) document.title = nextTitle;
 }
 
 function decorateBrand() {
@@ -68,6 +72,15 @@ function decorate() {
   updateUnreadTitle();
 }
 
+function scheduleDecorate() {
+  if (decorateScheduled) return;
+  decorateScheduled = true;
+  requestAnimationFrame(() => {
+    decorateScheduled = false;
+    decorate();
+  });
+}
+
 function focusSearch() {
   const search = qs('#search');
   if (!search) return false;
@@ -81,7 +94,7 @@ window.addEventListener('offline', updateConnectionPill);
 window.addEventListener('beforeinstallprompt', event => {
   event.preventDefault();
   deferredInstallPrompt = event;
-  decorateTopbar();
+  scheduleDecorate();
 });
 window.addEventListener('appinstalled', () => {
   deferredInstallPrompt = null;
@@ -105,12 +118,12 @@ document.addEventListener('visibilitychange', () => {
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(error => {
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(error => {
       console.warn('FrankiFlow Mail service worker registration failed', error);
     });
   });
 }
 
-const observer = new MutationObserver(() => queueMicrotask(decorate));
+const observer = new MutationObserver(scheduleDecorate);
 observer.observe(document.body, { childList: true, subtree: true });
-decorate();
+scheduleDecorate();
