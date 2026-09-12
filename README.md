@@ -4,7 +4,11 @@ Modern internal webmail for `info@frankiflow.de`.
 
 ## Branches
 - `main` — production-ready releases only.
-- `develop` — active development and ShipStatic preview.
+- `develop` — active development.
+
+## Environments
+- Development: https://mail-frankiflow.shipstatic.com
+- Production target: https://mail.frankiflow.de
 
 ## Stack
 - Static HTML/CSS/JavaScript frontend
