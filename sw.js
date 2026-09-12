@@ -1,4 +1,4 @@
-const CACHE = 'frankiflow-mail-dev-v8';
+const CACHE = 'frankiflow-mail-dev-v9';
 const SHELL = [
   '/',
   '/index.html',
@@ -44,5 +44,37 @@ self.addEventListener('fetch', event => {
         if (request.mode === 'navigate') return caches.match('/index.html');
         throw new Error('Offline and resource not cached');
       })
+  );
+});
+
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data?.json() || {}; } catch { data = { title: 'FrankiFlow Mail', body: 'New email received.' }; }
+  const title = data.title || 'FrankiFlow Mail';
+  const options = {
+    body: data.body || 'New email received.',
+    icon: '/assets/icon.svg',
+    tag: data.tag || 'frankiflow-mail',
+    renotify: true,
+    data: { url: data.url || '/' },
+    vibrate: [100, 60, 100]
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async clients => {
+      const sameOrigin = clients.find(client => {
+        try { return new URL(client.url).origin === self.location.origin; } catch { return false; }
+      });
+      if (sameOrigin) {
+        if ('navigate' in sameOrigin) await sameOrigin.navigate(target);
+        return sameOrigin.focus();
+      }
+      return self.clients.openWindow(target);
+    })
   );
 });
