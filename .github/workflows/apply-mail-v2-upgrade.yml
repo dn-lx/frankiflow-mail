@@ -1,0 +1,60 @@
+name: Apply FrankiFlow Mail v2 upgrade
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - scripts/upgrade-mail-v2.py
+      - .github/workflows/apply-mail-v2-upgrade.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: frankiflow-mail-v2-upgrade
+  cancel-in-progress: false
+
+jobs:
+  upgrade:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate upgrade script
+        run: python -m py_compile scripts/upgrade-mail-v2.py
+      - name: Apply upgrade
+        run: python scripts/upgrade-mail-v2.py
+      - name: Validate JavaScript
+        run: |
+          node --check assets/app.js
+          node --check assets/enhancements.js
+          node --check sw.js
+      - name: Verify requested features
+        run: |
+          grep -q "openAIAssistant" assets/app.js
+          grep -q "signature-editor" assets/app.js
+          grep -q "showContextMenu" assets/app.js
+          grep -q "default_sender_address" assets/app.js
+          grep -q "gpt-5.6-luna" assets/app.js
+          grep -q "mail-logo" assets/app.js
+          grep -q "settings-hub" assets/app.js
+          grep -q "extractInlineImages" assets/app.js
+          grep -q "refreshMessageLabels" assets/app.js
+          ! grep -q "Mehr als Reinigung" assets/app.js
+      - name: Diff check
+        run: git diff --check
+      - name: Commit upgrade
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/app.js assets/modern.css
+          git commit -m "Upgrade Mail settings signatures AI and context actions"
+          git push origin HEAD:develop
