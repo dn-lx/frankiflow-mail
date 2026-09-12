@@ -1,0 +1,59 @@
+name: Fix FrankiFlow Mail upgrade integrity
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - scripts/fix-mail-upgrade.py
+      - .github/workflows/fix-mail-upgrade.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: frankiflow-mail-integrity-fix
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate fixer
+        run: python -m py_compile scripts/fix-mail-upgrade.py
+      - name: Apply integrity fixes
+        run: python scripts/fix-mail-upgrade.py
+      - name: Validate JavaScript
+        run: |
+          node --check assets/app.js
+          node --check assets/enhancements.js
+          node --check sw.js
+      - name: Verify critical features
+        run: |
+          grep -q "replyAllBtn" assets/app.js
+          grep -q "signaturePlainText" assets/app.js
+          grep -q "setupRealtime" assets/app.js
+          grep -q "hardDeleteMessages" assets/app.js
+          grep -q 'id="cFrom"' assets/app.js
+          if [ "$(grep -c "getSession()" assets/app.js)" -ne 1 ]; then
+            echo "Expected exactly one getSession bootstrap" >&2
+            exit 1
+          fi
+      - name: Diff check
+        run: git diff --check
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/app.js
+          git commit -m "Fix Mail bootstrap signatures and reply all"
+          git push origin HEAD:develop
