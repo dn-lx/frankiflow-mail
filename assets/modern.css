@@ -154,3 +154,18 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,[contenteditable
 .context-menu{position:fixed;z-index:160;min-width:190px;padding:6px;background:var(--surface);border:1px solid var(--line);border-radius:13px;box-shadow:0 18px 55px rgba(0,0,0,.2)}.context-menu button{width:100%;border:0;background:transparent;color:var(--text);display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;text-align:left}.context-menu button:hover{background:var(--surface-3)}.context-menu button.danger{color:var(--danger)}
 .modal:has(.settings-hub),.modal:has(.signature-manager){width:min(820px,calc(100vw - 28px));max-height:min(86vh,900px)}.modal:has(.settings-hub) .modal-body,.modal:has(.signature-manager) .modal-body{overflow:auto}
 @media(max-width:720px){.settings-grid.two,.settings-grid.three{grid-template-columns:1fr}.settings-section{padding:12px}.context-menu{min-width:170px}.modal:has(.settings-hub),.modal:has(.signature-manager){width:calc(100vw - 18px)}}
+
+
+/* Settings account editor */
+.account-setting-row.editable{align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--line)}
+.account-setting-row.editable:last-child{border-bottom:0}
+.account-setting-main{flex:1;min-width:0}
+.account-setting-main>strong{display:block}
+.account-setting-main>small{display:block;color:var(--muted);margin-top:3px}
+.account-edit-grid{display:grid;grid-template-columns:minmax(180px,1fr) auto;gap:12px;align-items:end;margin-top:10px}
+.account-edit-grid label>span{display:block;font-size:10px;font-weight:700;color:var(--muted);margin-bottom:5px}
+.account-display-name{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 10px;outline:none}
+.account-display-name:focus{border-color:var(--brand-2);box-shadow:var(--ff-focus)}
+.account-default{display:flex!important;align-items:center;gap:7px;padding:9px 4px;white-space:nowrap}
+.account-default span{display:inline!important;margin:0!important}
+@media(max-width:620px){.account-edit-grid{grid-template-columns:1fr}.account-default{padding-left:0}}
