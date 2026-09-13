@@ -1,0 +1,36 @@
+name: Apply corrected Outlook-style Mail event scheduler
+on:
+  push:
+    branches: [develop]
+    paths:
+      - scripts/run-outlook-event-scheduler.py
+      - .github/workflows/apply-outlook-event-scheduler-fix.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: develop
+      - name: Apply corrected scheduler patch
+        run: python scripts/run-outlook-event-scheduler.py
+      - name: Validate JavaScript and scheduler hooks
+        run: |
+          node --check assets/app.js
+          node --check sw.js
+          grep -q 'openEventManager' assets/app.js
+          grep -q 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR' assets/app.js
+          grep -q 'composerHasMeaningfulContent' assets/app.js
+          grep -q 'Email profile image setup' assets/app.js
+          grep -q 'frankiflow-mail-dev-v11' sw.js
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/app.js assets/modern.css sw.js
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Add Outlook-style calendar and event scheduler"
+          git push origin develop
