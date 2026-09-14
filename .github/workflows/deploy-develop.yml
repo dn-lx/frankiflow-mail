@@ -24,6 +24,7 @@ jobs:
         run: |
           node --check assets/app.js
           node --check assets/enhancements.js
+          node --check assets/calendar-bridge.js
           node --check assets/config.js
 
       - name: Build development package
@@ -36,10 +37,12 @@ jobs:
           test -f _site/assets/app.js
           test -f _site/assets/modern.css
           test -f _site/assets/enhancements.js
+          test -f _site/assets/calendar-bridge.js
           test -f _site/assets/config.js
           grep -q "mail-frankiflow.shipstatic.com" _site/assets/config.js
           grep -q "isDevelopment ? 'develop' : 'production'" _site/assets/config.js
           grep -q "noindex,nofollow" _site/index.html
+          grep -q "calendar-bridge.js" _site/index.html
 
       - name: Deploy development to ShipStatic
         id: ship
@@ -64,10 +67,13 @@ jobs:
           grep -q "FrankiFlow Mail" /tmp/mail-home.html
           grep -q "assets/modern.css" /tmp/mail-home.html
           grep -q "assets/enhancements.js" /tmp/mail-home.html
+          grep -q "assets/calendar-bridge.js" /tmp/mail-home.html
           curl -fsSL "${DEV_URL}/assets/enhancements.js?verify=${GITHUB_SHA}" -o /tmp/mail-enhancements.js
           grep -q "ffConnectionPill" /tmp/mail-enhancements.js
           grep -q "ffMeetingBtn" /tmp/mail-enhancements.js
           grep -q "ff-attachment-card" /tmp/mail-enhancements.js
+          curl -fsSL "${DEV_URL}/assets/calendar-bridge.js?verify=${GITHUB_SHA}" -o /tmp/mail-calendar-bridge.js
+          grep -q "openCalendarManager" /tmp/mail-calendar-bridge.js
 
       - name: Deployment summary
         run: |
