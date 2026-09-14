@@ -31,16 +31,16 @@ jobs:
           node --check assets/config.js
       - name: Source assertions
         run: |
-          grep -q "develop--frankiflow-mail.netlify.app" assets/config.js
-          ! grep -q "mail-frankiflow.shipstatic.com" assets/config.js
-          grep -q "thread:${m.thread_id}" assets/app.js
-          grep -q "conversation_view!==false" assets/app.js
-          grep -q "compose & reply" assets/settings-cleanup.js
-          grep -q "mail accounts" assets/settings-cleanup.js
-          grep -q "mail users & personal mailboxes" assets/settings-cleanup.js
-          grep -q "password-eye-btn" assets/settings-cleanup.js
-          grep -q "settings-cleanup.js" index.html
-          grep -q "frankiflow-mail-dev-v18" sw.js
+          grep -q 'develop--frankiflow-mail.netlify.app' assets/config.js
+          ! grep -q 'mail-frankiflow.shipstatic.com' assets/config.js
+          grep -Fq 'thread:${m.thread_id}' assets/app.js
+          grep -Fq 'conversation_view!==false' assets/app.js
+          grep -q 'compose & reply' assets/settings-cleanup.js
+          grep -q 'mail accounts' assets/settings-cleanup.js
+          grep -q 'mail users & personal mailboxes' assets/settings-cleanup.js
+          grep -q 'password-eye-btn' assets/settings-cleanup.js
+          grep -q 'settings-cleanup.js' index.html
+          grep -q 'frankiflow-mail-dev-v18' sw.js
       - name: Headless settings cleanup test
         run: |
           set -euo pipefail
