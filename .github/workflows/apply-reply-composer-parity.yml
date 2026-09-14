@@ -1,0 +1,54 @@
+name: Apply reply composer parity
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - scripts/upgrade-dialog-composer.py
+      - .github/workflows/apply-reply-composer-parity.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: frankiflow-mail-reply-composer-parity
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v6
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Upgrade reply composer
+        run: python3 scripts/upgrade-dialog-composer.py
+
+      - name: Validate JavaScript
+        run: |
+          node --check assets/enhancements.js
+          grep -q 'id="ffDialogTemplate"' assets/enhancements.js
+          grep -q 'id="ffDialogSignature"' assets/enhancements.js
+          grep -q 'id="ffDialogAi"' assets/enhancements.js
+          grep -q 'id="ffDialogSendMenu"' assets/enhancements.js
+          grep -q 'insertOrderedList' assets/enhancements.js
+          grep -q 'scheduledAt' assets/enhancements.js
+
+      - name: Remove temporary patch files
+        run: |
+          rm -f scripts/upgrade-dialog-composer.py
+          rm -f .github/workflows/apply-reply-composer-parity.yml
+
+      - name: Commit upgraded composer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/enhancements.js scripts/upgrade-dialog-composer.py .github/workflows/apply-reply-composer-parity.yml
+          git commit -m "Match reply composer features with main composer"
+          git push origin HEAD:develop
