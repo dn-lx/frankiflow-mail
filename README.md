@@ -4,19 +4,19 @@ Modern internal webmail for FrankiFlow team and shared company mailboxes.
 
 ## Branches
 - `main` — production-ready releases only.
-- `develop` — active development.
+- `develop` — active development and Netlify testing.
 - Feature branches should merge into `develop` for testing before production.
 
 ## Environments
-- Development: https://mail-frankiflow.shipstatic.com
-- Production target: https://mail.frankiflow.de
+- Development: https://develop--frankiflow-mail.netlify.app
+- Production: https://mail.frankiflow.de
 
 ## Stack
 - Static HTML/CSS/JavaScript frontend
 - Supabase Auth + Postgres
 - Supabase Edge Functions
 - Resend transport
-- ShipStatic development hosting
+- Netlify hosting for development and production
 - Progressive Web App support
 
 ## Account model
@@ -52,4 +52,4 @@ Modern internal webmail for FrankiFlow team and shared company mailboxes.
 ## Security
 Frontend uses only the Supabase publishable key. Mail data is protected with Row Level Security and the send Edge Function requires an authenticated authorized FrankiFlow mail user with access to the chosen sender mailbox. Resend secrets remain server-side in Supabase function secrets.
 
-The development deployment is marked `noindex`. Production email DNS and the IONOS mailbox remain separate from the development frontend until the production mail migration is explicitly completed.
+The `develop` branch is the testing environment and should be checked on Netlify before merging to `main`. Production remains on `main` and `mail.frankiflow.de`.
