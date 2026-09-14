@@ -97,7 +97,11 @@ jobs:
           </script></body></html>`;
           fs.writeFileSync('/tmp/ff-ui-test/index.html',html);
           NODE
-          "$CHROME" --headless --no-sandbox --disable-gpu --allow-file-access-from-files --virtual-time-budget=5000 --dump-dom file:///tmp/ff-ui-test/index.html > /tmp/ff-ui-dom.txt
+          python3 -m http.server 8123 --directory /tmp/ff-ui-test >/tmp/ff-ui-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          sleep 0.4
+          "$CHROME" --headless --no-sandbox --disable-gpu --virtual-time-budget=5000 --dump-dom http://127.0.0.1:8123/index.html > /tmp/ff-ui-dom.txt
           cat /tmp/ff-ui-dom.txt
           grep -q 'data-test-status="PASS"' /tmp/ff-ui-dom.txt
           grep -q '"labels":true' /tmp/ff-ui-dom.txt
