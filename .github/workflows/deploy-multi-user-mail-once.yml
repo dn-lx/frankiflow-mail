@@ -1,0 +1,151 @@
+name: Deploy multi-user FrankiFlow Mail
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - .github/workflows/deploy-multi-user-mail-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frankiflow-mail-multi-user-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v6
+        with:
+          ref: develop
+
+      - name: Validate JavaScript
+        run: |
+          set -euo pipefail
+          node --check assets/app.js
+          node --check assets/enhancements.js
+          node --check assets/account-security.js
+          node --check assets/config.js
+          node --check sw.js
+
+      - name: Validate multi-user source integration
+        run: |
+          set -euo pipefail
+          grep -q 'assets/account-security.css' index.html
+          grep -q 'assets/account-security.js' index.html
+          grep -q 'Password & sign-in' assets/account-security.js
+          grep -q 'Mail users & personal mailboxes' assets/account-security.js
+          grep -q "updateUser({password})" assets/account-security.js
+          grep -q "data-mobile-filter=\"mail\"" assets/account-security.js
+          grep -q 'sender identity status' assets/account-security.js
+          grep -q 'frankiflow-mail-dev-v16' sw.js
+
+      - name: Headless settings UI test
+        run: |
+          set -euo pipefail
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$CHROME"
+          rm -rf /tmp/ff-mail-account-test
+          mkdir -p /tmp/ff-mail-account-test
+          node <<'NODE'
+          const fs=require('fs');
+          let src=fs.readFileSync('assets/account-security.js','utf8');
+          src=src.replace("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.116.0';\nimport { CONFIG } from './config.js';\n",`const CONFIG={supabaseUrl:'https://example.supabase.co',supabasePublishableKey:'test'};
+          const createClient=()=>({
+            auth:{
+              getSession:async()=>({data:{session:{access_token:'test'}}}),
+              getUser:async()=>({data:{user:{id:'admin-user',email:'info@frankiflow.de'}}}),
+              updateUser:async({password})=>{window.__passwordUpdates=(window.__passwordUpdates||0)+1;window.__lastPassword=password;return{error:null}}
+            },
+            from:()=>{const chain={select(){return chain},eq(){return chain},maybeSingle(){return Promise.resolve({data:{user_id:'admin-user',email:'info@frankiflow.de',role:'admin',active:true},error:null})}};return chain}
+          });
+          `);
+          fs.writeFileSync('/tmp/ff-mail-account-test/account-security.js',src);
+          const html=`<!doctype html><html><body>
+          <form id="loginForm"><input id="email" type="email" value="info@frankiflow.de"><input id="password" type="password"><button type="submit">Sign in</button></form>
+          <button data-mobile-filter="mail">Mail</button>
+          <div class="settings-hub">
+            <section class="settings-section"><h4>Sender identity status</h4><div>Legacy identity panel</div></section>
+            <section class="settings-section"><h4>Organization & tools</h4></section>
+          </div>
+          <script>
+          window.__uiErrors=[];window.__passwordUpdates=0;
+          window.addEventListener('error',e=>window.__uiErrors.push(e.message));
+          window.addEventListener('unhandledrejection',e=>window.__uiErrors.push(String(e.reason)));
+          window.fetch=async(url,opts)=>({ok:true,status:200,json:async()=>({ok:true,users:[{user_id:'admin-user',email:'info@frankiflow.de',role:'admin',active:true,accounts:[{address:'info@frankiflow.de',is_default:true}]}]})});
+          localStorage.removeItem('ffmail-last-login');
+          function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+          </script>
+          <script type="module" src="./account-security.js"></script>
+          <script>
+          (async()=>{
+            await sleep(500);
+            const results={};
+            results.loginNotHardcoded=document.querySelector('#email')?.value==='';
+            results.identityRemoved=![...document.querySelectorAll('.settings-section h4')].some(h=>h.textContent.toLowerCase().includes('sender identity status'));
+            results.mailQuickFilterRemoved=!document.querySelector('[data-mobile-filter="mail"]');
+            results.passwordSection=!![...document.querySelectorAll('.settings-section h4')].find(h=>h.textContent.includes('Password & sign-in'));
+            results.teamSection=!![...document.querySelectorAll('.settings-section h4')].find(h=>h.textContent.includes('Mail users & personal mailboxes'));
+            const p=document.querySelector('[data-new-password]'),c=document.querySelector('[data-confirm-password]');
+            p.value='StrongPass-12345';c.value='StrongPass-12345';
+            document.querySelector('[data-change-password]')?.click();
+            await sleep(150);
+            results.passwordUpdate=window.__passwordUpdates===1&&window.__lastPassword==='StrongPass-12345';
+            results.runtimeErrors=window.__uiErrors.length===0;
+            const pass=Object.values(results).every(Boolean);
+            document.body.dataset.testStatus=pass?'PASS':'FAIL';
+            document.body.dataset.testDetails=JSON.stringify(results);
+            document.body.dataset.testErrors=JSON.stringify(window.__uiErrors);
+          })();
+          </script></body></html>`;
+          fs.writeFileSync('/tmp/ff-mail-account-test/index.html',html);
+          NODE
+          node --check /tmp/ff-mail-account-test/account-security.js
+          python3 -m http.server 8125 --directory /tmp/ff-mail-account-test >/tmp/ff-mail-account-test.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          sleep 0.4
+          "$CHROME" --headless --no-sandbox --disable-gpu --virtual-time-budget=5000 --dump-dom http://127.0.0.1:8125/index.html > /tmp/ff-mail-account-dom.txt
+          grep -o 'data-test-details="[^"]*"' /tmp/ff-mail-account-dom.txt | tail -1 || true
+          grep -q 'data-test-status="PASS"' /tmp/ff-mail-account-dom.txt
+          echo "Multi-user settings test passed."
+
+      - name: Build development package
+        run: |
+          set -euo pipefail
+          rm -rf _site
+          mkdir -p _site
+          cp index.html manifest.webmanifest sw.js robots.txt ship.json _site/
+          cp -R assets _site/assets
+          test -f _site/assets/account-security.js
+          test -f _site/assets/account-security.css
+
+      - name: Deploy development to ShipStatic
+        uses: shipstatic/action@v2
+        with:
+          token: ${{ secrets.SHIP_TOKEN }}
+          path: ./_site
+          domain: mail-frankiflow.shipstatic.com
+          labels: development,frankiflow-mail,develop
+
+      - name: Verify permanent development URL
+        run: |
+          set -euo pipefail
+          BASE="https://mail-frankiflow.shipstatic.com"
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsSL "${BASE}/?verify=${GITHUB_SHA}" -o /tmp/mail-home.html; then break; fi
+            sleep 3
+          done
+          grep -q 'assets/account-security.css' /tmp/mail-home.html
+          grep -q 'assets/account-security.js' /tmp/mail-home.html
+          curl -fsSL "${BASE}/assets/account-security.js?verify=${GITHUB_SHA}" -o /tmp/account-security.js
+          curl -fsSL "${BASE}/sw.js?verify=${GITHUB_SHA}" -o /tmp/mail-sw.js
+          grep -q 'Password & sign-in' /tmp/account-security.js
+          grep -q 'Mail users & personal mailboxes' /tmp/account-security.js
+          grep -q 'frankiflow-mail-dev-v16' /tmp/mail-sw.js
+          echo "Permanent URL verification passed."
