@@ -22,14 +22,15 @@ Modern internal webmail for FrankiFlow team and shared company mailboxes.
 ## Account model
 - Each person can have an individual `@frankiflow.de` login and mailbox, for example `first.last@frankiflow.de`.
 - Each login uses its own Supabase Auth password.
-- Users can change their own password from FrankiFlow Mail settings.
-- Administrators can create new FrankiFlow Mail users and set a temporary password from Settings.
-- New personal users receive their own personal mailbox and access to the shared `info@frankiflow.de` mailbox.
+- Users can change their own password from FrankiFlow Mail settings, including show/hide password controls.
+- Mailbox/user administration is intentionally not exposed in the normal Mail settings UI.
+- Personal users can receive their own personal mailbox plus access to the shared `info@frankiflow.de` mailbox.
 - Mailbox visibility and send permissions are enforced server-side with per-user account mappings and Row Level Security.
 - `mail@frankiflow.de` is no longer a configured mailbox account.
 
 ## Mail features
 - Threaded inbox and conversation reader
+- One inbox/list row per conversation thread while the reader shows the full message history
 - Rich-text composer with CC/BCC and attachments
 - Draft autosave
 - Scheduled send via Resend
@@ -48,6 +49,7 @@ Modern internal webmail for FrankiFlow team and shared company mailboxes.
 - Installable PWA shell with network-first refresh behavior
 - Online/offline connection awareness
 - Automatic refresh after returning to a stale browser tab
+- Notifications are enabled in the app by default; the browser/OS permission prompt is still controlled by the device.
 
 ## Security
 Frontend uses only the Supabase publishable key. Mail data is protected with Row Level Security and the send Edge Function requires an authenticated authorized FrankiFlow mail user with access to the chosen sender mailbox. Resend secrets remain server-side in Supabase function secrets.
