@@ -210,19 +210,26 @@ function renderReader(){
     [['Restore to Inbox','restore_from_trash',()=>moveMessage(m.id,'inbox')],['Print','print',()=>window.print()],['Delete forever','delete_forever',()=>confirmPermanentDelete([m.id]),true]]:
     [['Mark unread','mark_email_unread',()=>patchMessage(m.id,{is_read:false})],[m.is_pinned?'Unpin':'Pin','keep',()=>patchMessage(m.id,{is_pinned:!m.is_pinned})],[m.priority==='high'?'Normal priority':'High priority','priority_high',()=>patchMessage(m.id,{priority:m.priority==='high'?'normal':'high'})],['Category: Clients','group',()=>patchMessage(m.id,{category:'clients'})],['Category: Bookings','hotel',()=>patchMessage(m.id,{category:'bookings'})],['Category: Finance','payments',()=>patchMessage(m.id,{category:'finance'})],[m.folder==='spam'?'Not spam':'Move to spam',m.folder==='spam'?'inbox':'report',()=>moveMessage(m.id,m.folder==='spam'?'inbox':'spam')],['Print','print',()=>window.print()],['Delete','delete',()=>moveMessage(m.id,'trash'),true]]);
   document.querySelector('#replySend')?.addEventListener('click',()=>sendQuickReply(m));
-  document.querySelector('#replyCompose')?.addEventListener('click',()=>openComposer({fromAddress:accountForMessage(m)?.address||defaultFromAddress(),to:m.reply_to||m.from_address,subject:replySubject(m.subject),thread_id:m.thread_id,in_reply_to:m.provider_message_id}));
-  document.querySelector('#replyAllBtn')?.addEventListener('click',()=>{
-    const own=new Set(state.accounts.map(a=>a.address.toLowerCase()));
-    const primary=(m.reply_to||m.from_address||'').toLowerCase();
-    const cc=[...arr(m.to_addresses),...arr(m.cc_addresses)].map(x=>String(x).trim()).filter(Boolean).filter(x=>!own.has(x.toLowerCase())&&x.toLowerCase()!==primary);
-    openComposer({fromAddress:accountForMessage(m)?.address||defaultFromAddress(),to:m.reply_to||m.from_address,cc:[...new Set(cc)].join(', '),subject:replySubject(m.subject),thread_id:m.thread_id,in_reply_to:m.provider_message_id});
-  });
+  document.querySelector('#replyCompose')?.addEventListener('click',()=>{const recipients=replyRecipients(m,false);if(!recipients.to)return toast('No reply recipient found','warning');openComposer({fromAddress:accountForMessage(m)?.address||defaultFromAddress(),to:recipients.to,subject:replySubject(m.subject),thread_id:m.thread_id,in_reply_to:m.provider_message_id});});
+  document.querySelector('#replyAllBtn')?.addEventListener('click',()=>{const recipients=replyRecipients(m,true);if(!recipients.to)return toast('No reply recipient found','warning');openComposer({fromAddress:accountForMessage(m)?.address||defaultFromAddress(),to:recipients.to,cc:recipients.cc.join(', '),subject:replySubject(m.subject),thread_id:m.thread_id,in_reply_to:m.provider_message_id});});
   document.querySelector('#forwardBtn')?.addEventListener('click',()=>openComposer({subject:`Fwd: ${m.subject||''}`,text:`\n\n---------- Forwarded message ----------\nFrom: ${m.from_name||m.from_address}\nDate: ${fmtFull(m.received_at||m.created_at)}\nSubject: ${m.subject||''}\n\n${m.text_body||''}`}));
 }
 function renderThreadCard(x){return`<article class="thread-card"><div class="thread-card-head"><div class="avatar">${initials(x.from_name||x.from_address)}</div><div class="who"><strong>${esc(x.from_name||x.from_address)}</strong><div class="meta">${esc(x.from_address)} → ${esc(addresses(x.to_addresses))}${arr(x.cc_addresses).length?` · cc ${esc(addresses(x.cc_addresses))}`:''}</div></div><time>${fmtFull(x.received_at||x.sent_at||x.created_at)}</time></div><div class="thread-body">${esc(x.text_body||stripHtml(x.html_body)||'').replace(/\n/g,'<br>')}</div></article>`;}
 function quickReplyHtml(m){return`<div class="quick-reply"><div class="quick-reply-head"><strong>Reply</strong><div><button class="icon-btn" id="replyAllBtn" title="Reply all">${icon('reply_all')}</button><button class="icon-btn" id="forwardBtn" title="Forward">${icon('forward')}</button></div></div><div id="quickReplyEditor" class="quick-reply-editor" contenteditable="true" data-placeholder="Write a quick reply…"></div><div class="quick-actions"><button class="icon-btn" id="replyCompose" title="Full composer" aria-label="Full composer">${icon('open_in_full')}</button><button class="btn-primary" id="replySend">${icon('send')} Reply</button></div></div>`;}
 const replySubject=s=>/^re:/i.test(s||'')?s:`Re: ${s||''}`;
-async function sendQuickReply(m){const editor=document.querySelector('#quickReplyEditor');const html=editor.innerHTML.trim(),text=editor.innerText.trim();if(!text)return;const ok=await sendMail({fromAddress:accountForMessage(m)?.address||defaultFromAddress(),to:m.reply_to||m.from_address,subject:replySubject(m.subject),text,html,thread_id:m.thread_id,in_reply_to:m.provider_message_id});if(ok)editor.innerHTML='';}
+function replyRecipients(m,includeAll=false){
+  const own=new Set(state.accounts.map(a=>String(a.address||'').trim().toLowerCase()).filter(Boolean));
+  own.add(String(CONFIG.mailbox||'').trim().toLowerCase());
+  const primary=String(m?.reply_to||m?.from_address||'').trim();
+  const candidates=[];
+  if(primary&&!own.has(primary.toLowerCase()))candidates.push(primary);
+  if(includeAll)candidates.push(...arr(m?.to_addresses),...arr(m?.cc_addresses));
+  if(!candidates.length)candidates.push(...arr(m?.to_addresses),...arr(m?.cc_addresses));
+  const seen=new Set(),unique=[];
+  for(const raw of candidates){const value=String(raw||'').trim();const key=value.toLowerCase();if(!value||own.has(key)||seen.has(key))continue;seen.add(key);unique.push(value);}
+  return{to:unique[0]||'',cc:includeAll?unique.slice(1):[]};
+}
+async function sendQuickReply(m){const editor=document.querySelector('#quickReplyEditor');const html=editor.innerHTML.trim(),text=editor.innerText.trim();if(!text)return;const recipients=replyRecipients(m,false);if(!recipients.to)return toast('No reply recipient found','warning');const ok=await sendMail({fromAddress:accountForMessage(m)?.address||defaultFromAddress(),to:recipients.to,cc:recipients.cc.join(', '),subject:replySubject(m.subject),text,html,thread_id:m.thread_id,in_reply_to:m.provider_message_id});if(ok)editor.innerHTML='';}
 
 async function patchMessage(id,patch,rerender=true){const {error}=await supabase.from('frankiflow_mail_messages').update({...patch,updated_at:new Date().toISOString()}).eq('id',id);if(error)return toast(error.message,'error');Object.assign(state.messages.find(x=>x.id===id)||{},patch);if(rerender)renderApp();}
 async function moveMessage(id,folder){const patch={folder,trashed_at:folder==='trash'?new Date().toISOString():null};await patchMessage(id,patch);state.activeId=null;toast(folder==='inbox'?'Restored to Inbox':`Moved to ${folder}`);await loadAll();}
