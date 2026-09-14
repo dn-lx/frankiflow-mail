@@ -71,16 +71,16 @@ jobs:
           const labels=Array.from({length:8},(_,i)=>`<button class="nav-btn"><span>Label ${i+1}</span></button>`).join('');
           const html=`<!doctype html><html><head><meta charset="utf-8"><style>
           body{margin:0;font-family:Arial}.shell{display:grid;grid-template-columns:244px 420px 1fr;height:800px}.sidebar{background:#0c3447;color:white;padding:12px;display:flex;flex-direction:column}.labels-scroll{overflow:auto;max-height:190px}.nav-btn{display:flex;padding:8px}.mail-row{padding:18px;border:1px solid #ddd;cursor:pointer}.topbar{height:60px}.reader{display:none}
-          </style></head><body><div id="app"><main class="shell"><aside class="sidebar"><button id="composeMain">Compose</button><div class="labels-scroll">${labels}</div></aside><section><div class="topbar"><button id="refreshBtn">Refresh</button></div><div class="mail-row" data-id="test-message"><span class="subject">UI double-click test</span></div></section><section id="reader" class="reader"></section></main></div><script type="module" src="./enhancements.js"></script><script>
-          setTimeout(async()=>{
+          </style></head><body><div id="app"><main class="shell"><aside class="sidebar"><button id="composeMain">Compose</button><div class="labels-scroll">${labels}</div></aside><section><div class="topbar"><button id="refreshBtn">Refresh</button></div><div class="mail-row" data-id="test-message"><span class="subject">UI double-click test</span></div></section><section id="reader" class="reader"></section></main></div><script>window.__uiErrors=[];window.addEventListener('error',e=>window.__uiErrors.push(e.message));window.addEventListener('unhandledrejection',e=>window.__uiErrors.push(String(e.reason)));function waitFor(sel,timeout=4000){return new Promise(resolve=>{const started=Date.now();const t=setInterval(()=>{const el=document.querySelector(sel);if(el){clearInterval(t);resolve(el)}else if(Date.now()-started>=timeout){clearInterval(t);resolve(null)}},50)})}</script><script type="module" src="./enhancements.js"></script><script>
+          (async()=>{
+            const scheduler=await waitFor('#ffSidebarMeeting',4000);
             const results={};
             const labelsEl=document.querySelector('.labels-scroll');
             const cs=getComputedStyle(labelsEl);
             results.labels=cs.maxHeight==='none'&&cs.overflowY==='visible';
-            const scheduler=document.querySelector('#ffSidebarMeeting');
             results.sidebarScheduler=!!scheduler&&scheduler.textContent.includes('Meeting Scheduler')&&!document.querySelector('#ffMeetingBtn');
             scheduler?.click();
-            await new Promise(r=>setTimeout(r,150));
+            await new Promise(r=>setTimeout(r,250));
             results.schedulerDialog=!!document.querySelector('.ff-meeting-backdrop');
             document.querySelector('.ff-meeting-backdrop')?.remove();
             let row=document.querySelector('.mail-row');
@@ -88,26 +88,30 @@ jobs:
             const replacement=row.cloneNode(true);row.replaceWith(replacement);
             await new Promise(r=>setTimeout(r,100));
             replacement.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-            await new Promise(r=>setTimeout(r,350));
+            await new Promise(r=>setTimeout(r,500));
             results.doubleClickDialog=!!document.querySelector('.ff-message-dialog-backdrop');
+            results.runtimeErrors=window.__uiErrors.length===0;
             const pass=Object.values(results).every(Boolean);
             document.body.dataset.testStatus=pass?'PASS':'FAIL';
             document.body.dataset.testDetails=JSON.stringify(results);
-          },700);
+            document.body.dataset.testErrors=JSON.stringify(window.__uiErrors);
+          })();
           </script></body></html>`;
           fs.writeFileSync('/tmp/ff-ui-test/index.html',html);
           NODE
+          node --check /tmp/ff-ui-test/enhancements.js
           python3 -m http.server 8123 --directory /tmp/ff-ui-test >/tmp/ff-ui-server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           sleep 0.4
-          "$CHROME" --headless --no-sandbox --disable-gpu --virtual-time-budget=5000 --dump-dom http://127.0.0.1:8123/index.html > /tmp/ff-ui-dom.txt
+          "$CHROME" --headless --no-sandbox --disable-gpu --virtual-time-budget=8000 --dump-dom http://127.0.0.1:8123/index.html > /tmp/ff-ui-dom.txt
           cat /tmp/ff-ui-dom.txt
           grep -q 'data-test-status="PASS"' /tmp/ff-ui-dom.txt
           grep -q '"labels":true' /tmp/ff-ui-dom.txt
           grep -q '"sidebarScheduler":true' /tmp/ff-ui-dom.txt
           grep -q '"schedulerDialog":true' /tmp/ff-ui-dom.txt
           grep -q '"doubleClickDialog":true' /tmp/ff-ui-dom.txt
+          grep -q '"runtimeErrors":true' /tmp/ff-ui-dom.txt
 
       - name: Deploy development to ShipStatic
         id: ship
