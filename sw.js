@@ -1,10 +1,11 @@
-const CACHE = 'frankiflow-mail-dev-v15';
+const CACHE = 'frankiflow-mail-dev-v16';
 const SHELL = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
   '/assets/styles.css',
   '/assets/modern.css',
+  '/assets/account-security.css',
   '/assets/app.js',
   '/assets/enhancements.js',
   '/assets/account-security.js',
