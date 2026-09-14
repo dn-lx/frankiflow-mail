@@ -7,6 +7,7 @@ on:
       - assets/app.js
       - assets/settings-cleanup.js
       - assets/settings-cleanup.css
+      - assets/account-security.js
       - assets/config.js
       - index.html
       - sw.js
@@ -39,6 +40,9 @@ jobs:
           grep -q 'mail accounts' assets/settings-cleanup.js
           grep -q 'mail users & personal mailboxes' assets/settings-cleanup.js
           grep -q 'password-eye-btn' assets/settings-cleanup.js
+          grep -q 'Password & sign-in' assets/account-security.js
+          ! grep -q 'data-create-mail-user' assets/account-security.js
+          ! grep -q 'mail-user-list' assets/account-security.js
           grep -q 'settings-cleanup.js' index.html
           grep -q 'frankiflow-mail-dev-v18' sw.js
       - name: Headless settings cleanup test
