@@ -61,7 +61,9 @@ jobs:
           const start=src.indexOf("import { createClient }");
           const end=src.indexOf("const ATTACHMENT_BUCKET");
           if(start<0||end<0) throw new Error('Could not prepare enhancement UI test');
-          const stub=`const CONFIG={mode:'develop',mailbox:'info@frankiflow.de',sendFunctionUrl:'about:blank',supabasePublishableKey:'test'};
+          const stub=`const qs=(s,r=document)=>r.querySelector(s);
+          const qsa=(s,r=document)=>[...r.querySelectorAll(s)];
+          const CONFIG={mode:'develop',mailbox:'info@frankiflow.de',sendFunctionUrl:'about:blank',supabasePublishableKey:'test'};
           const testMessage={id:'test-message',subject:'UI double-click test',from_name:'Customer',from_address:'customer@example.com',to_addresses:['info@frankiflow.de'],html_body:'<div style="padding:18px"><b>Rendered HTML email</b><p>Dialog test content.</p></div>',text_body:'Rendered HTML email',created_at:new Date().toISOString()};
           function dbChain(table){return{select(){return this},eq(){return this},gte(){return this},update(){return this},order(){return this},limit:async()=>({data:[],error:null}),maybeSingle:async()=>({data:table==='frankiflow_mail_messages'?testMessage:null,error:null})}}
           const mailDb={auth:{getSession:async()=>({data:{session:{access_token:'test'}}}),onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})},from:dbChain,storage:{from:()=>({createSignedUrl:async()=>({data:{signedUrl:'about:blank'}})})}};
