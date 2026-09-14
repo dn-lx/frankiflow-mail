@@ -40,13 +40,12 @@ jobs:
           grep -q "replyRecipients" assets/app.js
           ! grep -q "ffReaderMeeting" assets/enhancements.js
           grep -q "frankiflow-mail-dev-v13" sw.js
-          grep -q "Headless dialog compose and reply-all test" .github/workflows/deploy-develop.yml
 
       - name: Commit upgraded mail UI
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/app.js assets/enhancements.js sw.js .github/workflows/deploy-develop.yml
+          git add assets/app.js assets/enhancements.js sw.js
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
