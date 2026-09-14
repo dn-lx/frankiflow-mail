@@ -1,0 +1,39 @@
+name: Delete merged branches
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  delete-merged-branch:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref != 'develop'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Delete merged head branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          DEFAULT_BRANCH="$(gh api "repos/$REPO" --jq '.default_branch')"
+
+          if [ "$BRANCH" = "develop" ] || [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
+            echo "Keeping protected long-lived branch: $BRANCH"
+            exit 0
+          fi
+
+          if gh api --silent "repos/$REPO/git/ref/heads/$BRANCH" >/dev/null 2>&1; then
+            echo "Deleting merged branch: $BRANCH"
+            gh api --method DELETE "repos/$REPO/git/refs/heads/$BRANCH"
+          else
+            echo "Branch '$BRANCH' is already deleted; nothing to do."
+          fi
