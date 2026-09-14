@@ -35,6 +35,57 @@ const defaultFromAddress=()=>state.accounts.find(a=>a.address===state.settings?.
 const trashDaysLeft=m=>{if(!m?.trashed_at)return 10;const ms=new Date(m.trashed_at).getTime()+10*864e5-Date.now();return Math.max(0,Math.ceil(ms/864e5));};
 function updateDocumentTitle(){const n=unreadCount();document.title=n?`(${n}) FrankiFlow Mail`:'FrankiFlow Mail';}
 
+function sanitizeReaderEmailHtml(html=''){
+  const doc=new DOMParser().parseFromString(String(html||''),'text/html');
+  doc.querySelectorAll('script,iframe,object,embed,applet,form,input,textarea,select,button,meta[http-equiv="refresh"]').forEach(el=>el.remove());
+  doc.querySelectorAll('*').forEach(el=>{
+    [...el.attributes].forEach(attr=>{
+      if(/^on/i.test(attr.name))el.removeAttribute(attr.name);
+      if((attr.name==='href'||attr.name==='src')&&/^javascript:/i.test(attr.value.trim()))el.removeAttribute(attr.name);
+    });
+  });
+  doc.querySelectorAll('a[href]').forEach(a=>{a.target='_blank';a.rel='noopener noreferrer';});
+  doc.querySelectorAll('img').forEach(img=>{img.loading='lazy';img.referrerPolicy='no-referrer';img.style.maxWidth='100%';});
+  const base=doc.createElement('base');base.target='_blank';doc.head.prepend(base);
+  const fit=doc.createElement('style');
+  fit.textContent='html,body{max-width:100%;overflow-wrap:anywhere} body{margin:0!important} table{max-width:100%} img{height:auto!important}';
+  doc.head.appendChild(fit);
+  return '<!doctype html>'+doc.documentElement.outerHTML;
+}
+function renderReaderEmailBody(container,message){
+  if(!container||!message)return;
+  container.innerHTML='';
+  container.dataset.ffRich='1';
+  container.dataset.messageId=message.id||'';
+  const rich=document.createElement('div');
+  rich.className='ff-rich-message';
+  rich.style.marginTop='10px';
+  container.appendChild(rich);
+  if(message.html_body){
+    const frame=document.createElement('iframe');
+    frame.className='ff-email-frame';
+    frame.setAttribute('sandbox','allow-same-origin allow-popups allow-popups-to-escape-sandbox');
+    frame.setAttribute('referrerpolicy','no-referrer');
+    frame.style.cssText='display:block;width:100%;min-height:180px;border:0;background:#fff;border-radius:14px;overflow:hidden';
+    frame.srcdoc=sanitizeReaderEmailHtml(message.html_body);
+    frame.addEventListener('load',()=>{
+      try{
+        const resize=()=>{
+          const doc=frame.contentDocument;if(!doc)return;
+          const h=Math.max(doc.body?.scrollHeight||0,doc.documentElement?.scrollHeight||0,180);
+          frame.style.height=`${Math.min(Math.max(h+6,180),5000)}px`;
+        };
+        resize();setTimeout(resize,120);setTimeout(resize,500);
+      }catch(error){console.warn('Could not auto-size email frame',error);}
+    });
+    rich.appendChild(frame);
+  }else{
+    const text=document.createElement('div');
+    text.style.whiteSpace='pre-wrap';text.style.lineHeight='1.65';text.textContent=message.text_body||'';
+    rich.appendChild(text);
+  }
+}
+
 function applyTheme(){
   const pref=state.settings?.theme||localStorage.getItem('ffmail-theme')||'system';
   const dark=pref==='dark'||(pref==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);
@@ -196,6 +247,7 @@ function renderReader(){
   if(!m){panel.classList.remove('open');panel.innerHTML=`<div class="reader-empty"><div class="reader-empty-card">${icon('mail')}<strong>Select a conversation</strong>Read, reply, label or organize mail from here.</div></div>`;return;}
   const thread=threadFor(m),ls=labelsFor(m.id);
   panel.classList.add('open');panel.innerHTML=`<div class="reader-head"><button class="icon-btn reader-mobile-back" id="backReader">${icon('arrow_back')}</button><div class="reader-title">${esc(m.subject||'(no subject)')}</div><div class="reader-tools"><button class="icon-btn ${m.is_starred?'active':''}" id="readerStar">${icon('star')}</button><button class="icon-btn" id="readerArchive" title="Archive">${icon('archive')}</button><button class="icon-btn" id="readerSnooze" title="Snooze">${icon('schedule')}</button><button class="icon-btn" id="readerLabel" title="Label">${icon('label')}</button><button class="icon-btn" id="readerMore">${icon('more_vert')}</button></div></div><div class="reader-scroll"><div class="thread-summary"><span class="big-subject">${esc(m.subject||'(no subject)')}</span>${m.priority==='high'?`<span class="chip">${icon('priority_high')} Important</span>`:''}${ls.map(l=>`<span class="chip"><span class="label-dot" style="background:${esc(l.color)}"></span>${esc(l.name)}</span>`).join('')}</div>${thread.map(renderThreadCard).join('')}${m.folder!=='trash'?quickReplyHtml(m):''}</div>`;
+  document.querySelectorAll('#reader .thread-card').forEach((card,index)=>{const message=thread[index];const body=card.querySelector('.thread-body');if(body&&message)renderReaderEmailBody(body,message);});
   document.querySelector('#backReader').onclick=()=>panel.classList.remove('open');document.querySelector('#readerStar').onclick=()=>patchMessage(m.id,{is_starred:!m.is_starred});
   const archiveBtn=document.querySelector('#readerArchive'),snoozeBtn=document.querySelector('#readerSnooze');
   if(m.folder==='trash'){
@@ -214,7 +266,7 @@ function renderReader(){
   document.querySelector('#replyAllBtn')?.addEventListener('click',()=>{const recipients=replyRecipients(m,true);if(!recipients.to)return toast('No reply recipient found','warning');openComposer({fromAddress:accountForMessage(m)?.address||defaultFromAddress(),to:recipients.to,cc:recipients.cc.join(', '),subject:replySubject(m.subject),thread_id:m.thread_id,in_reply_to:m.provider_message_id});});
   document.querySelector('#forwardBtn')?.addEventListener('click',()=>openComposer({subject:`Fwd: ${m.subject||''}`,text:`\n\n---------- Forwarded message ----------\nFrom: ${m.from_name||m.from_address}\nDate: ${fmtFull(m.received_at||m.created_at)}\nSubject: ${m.subject||''}\n\n${m.text_body||''}`}));
 }
-function renderThreadCard(x){return`<article class="thread-card"><div class="thread-card-head"><div class="avatar">${initials(x.from_name||x.from_address)}</div><div class="who"><strong>${esc(x.from_name||x.from_address)}</strong><div class="meta">${esc(x.from_address)} → ${esc(addresses(x.to_addresses))}${arr(x.cc_addresses).length?` · cc ${esc(addresses(x.cc_addresses))}`:''}</div></div><time>${fmtFull(x.received_at||x.sent_at||x.created_at)}</time></div><div class="thread-body">${esc(x.text_body||stripHtml(x.html_body)||'').replace(/\n/g,'<br>')}</div></article>`;}
+function renderThreadCard(x){return`<article class="thread-card" data-message-id="${esc(x.id||'')}"><div class="thread-card-head"><div class="avatar">${initials(x.from_name||x.from_address)}</div><div class="who"><strong>${esc(x.from_name||x.from_address)}</strong><div class="meta">${esc(x.from_address)} → ${esc(addresses(x.to_addresses))}${arr(x.cc_addresses).length?` · cc ${esc(addresses(x.cc_addresses))}`:''}</div></div><time>${fmtFull(x.received_at||x.sent_at||x.created_at)}</time></div><div class="thread-body" data-message-id="${esc(x.id||'')}"></div></article>`;}
 function quickReplyHtml(m){return`<div class="quick-reply"><div class="quick-reply-head"><strong>Reply</strong><div><button class="icon-btn" id="replyAllBtn" title="Reply all">${icon('reply_all')}</button><button class="icon-btn" id="forwardBtn" title="Forward">${icon('forward')}</button></div></div><div id="quickReplyEditor" class="quick-reply-editor" contenteditable="true" data-placeholder="Write a quick reply…"></div><div class="quick-actions"><button class="icon-btn" id="replyCompose" title="Full composer" aria-label="Full composer">${icon('open_in_full')}</button><button class="btn-primary" id="replySend">${icon('send')} Reply</button></div></div>`;}
 const replySubject=s=>/^re:/i.test(s||'')?s:`Re: ${s||''}`;
 function replyRecipients(m,includeAll=false){

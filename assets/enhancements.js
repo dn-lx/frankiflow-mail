@@ -313,10 +313,15 @@ async function enhanceReader() {
       if (!message) return;
       card.dataset.messageId = message.id;
       const body = qs('.thread-body', card);
-      if (!body || body.dataset.ffRich === '1') return;
-      body.dataset.ffRich = '1';
-      renderHtmlInto(body, message.html_body, message.text_body);
-      renderAttachments(body, message.id);
+      if (!body) return;
+      if (body.dataset.ffRich !== '1') {
+        body.dataset.ffRich = '1';
+        renderHtmlInto(body, message.html_body, message.text_body);
+      }
+      if (body.dataset.ffAttachments !== '1') {
+        body.dataset.ffAttachments = '1';
+        renderAttachments(body, message.id);
+      }
     });
     readerEnhancementKey = key;
   } finally { readerEnhancementBusy = false; }
