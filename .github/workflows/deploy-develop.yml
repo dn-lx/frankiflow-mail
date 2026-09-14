@@ -48,6 +48,63 @@ jobs:
           grep -q "openMessageWindow(id)" _site/assets/enhancements.js
           grep -q "composerBodyHasMeaningfulContent" _site/assets/app.js
 
+      - name: Headless UI smoke test
+        run: |
+          set -euo pipefail
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$CHROME"
+          rm -rf /tmp/ff-ui-test
+          mkdir -p /tmp/ff-ui-test
+          node <<'NODE'
+          const fs=require('fs');
+          let src=fs.readFileSync('assets/enhancements.js','utf8');
+          const start=src.indexOf("import { createClient }");
+          const end=src.indexOf("const ATTACHMENT_BUCKET");
+          if(start<0||end<0) throw new Error('Could not prepare enhancement UI test');
+          const stub=`const CONFIG={mode:'develop',mailbox:'info@frankiflow.de',sendFunctionUrl:'about:blank',supabasePublishableKey:'test'};
+          const testMessage={id:'test-message',subject:'UI double-click test',from_name:'Customer',from_address:'customer@example.com',to_addresses:['info@frankiflow.de'],html_body:'<div style="padding:18px"><b>Rendered HTML email</b><p>Dialog test content.</p></div>',text_body:'Rendered HTML email',created_at:new Date().toISOString()};
+          function dbChain(table){return{select(){return this},eq(){return this},gte(){return this},update(){return this},order(){return this},limit:async()=>({data:[],error:null}),maybeSingle:async()=>({data:table==='frankiflow_mail_messages'?testMessage:null,error:null})}}
+          const mailDb={auth:{getSession:async()=>({data:{session:{access_token:'test'}}}),onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})},from:dbChain,storage:{from:()=>({createSignedUrl:async()=>({data:{signedUrl:'about:blank'}})})}};
+          `;
+          src=stub+src.slice(end);
+          fs.writeFileSync('/tmp/ff-ui-test/enhancements.js',src);
+          const labels=Array.from({length:8},(_,i)=>`<button class="nav-btn"><span>Label ${i+1}</span></button>`).join('');
+          const html=`<!doctype html><html><head><meta charset="utf-8"><style>
+          body{margin:0;font-family:Arial}.shell{display:grid;grid-template-columns:244px 420px 1fr;height:800px}.sidebar{background:#0c3447;color:white;padding:12px;display:flex;flex-direction:column}.labels-scroll{overflow:auto;max-height:190px}.nav-btn{display:flex;padding:8px}.mail-row{padding:18px;border:1px solid #ddd;cursor:pointer}.topbar{height:60px}.reader{display:none}
+          </style></head><body><div id="app"><main class="shell"><aside class="sidebar"><button id="composeMain">Compose</button><div class="labels-scroll">${labels}</div></aside><section><div class="topbar"><button id="refreshBtn">Refresh</button></div><div class="mail-row" data-id="test-message"><span class="subject">UI double-click test</span></div></section><section id="reader" class="reader"></section></main></div><script type="module" src="./enhancements.js"></script><script>
+          setTimeout(async()=>{
+            const results={};
+            const labelsEl=document.querySelector('.labels-scroll');
+            const cs=getComputedStyle(labelsEl);
+            results.labels=cs.maxHeight==='none'&&cs.overflowY==='visible';
+            const scheduler=document.querySelector('#ffSidebarMeeting');
+            results.sidebarScheduler=!!scheduler&&scheduler.textContent.includes('Meeting Scheduler')&&!document.querySelector('#ffMeetingBtn');
+            scheduler?.click();
+            await new Promise(r=>setTimeout(r,150));
+            results.schedulerDialog=!!document.querySelector('.ff-meeting-backdrop');
+            document.querySelector('.ff-meeting-backdrop')?.remove();
+            let row=document.querySelector('.mail-row');
+            row.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+            const replacement=row.cloneNode(true);row.replaceWith(replacement);
+            await new Promise(r=>setTimeout(r,100));
+            replacement.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+            await new Promise(r=>setTimeout(r,350));
+            results.doubleClickDialog=!!document.querySelector('.ff-message-dialog-backdrop');
+            const pass=Object.values(results).every(Boolean);
+            document.body.dataset.testStatus=pass?'PASS':'FAIL';
+            document.body.dataset.testDetails=JSON.stringify(results);
+          },700);
+          </script></body></html>`;
+          fs.writeFileSync('/tmp/ff-ui-test/index.html',html);
+          NODE
+          "$CHROME" --headless --no-sandbox --disable-gpu --allow-file-access-from-files --virtual-time-budget=5000 --dump-dom file:///tmp/ff-ui-test/index.html > /tmp/ff-ui-dom.txt
+          cat /tmp/ff-ui-dom.txt
+          grep -q 'data-test-status="PASS"' /tmp/ff-ui-dom.txt
+          grep -q '"labels":true' /tmp/ff-ui-dom.txt
+          grep -q '"sidebarScheduler":true' /tmp/ff-ui-dom.txt
+          grep -q '"schedulerDialog":true' /tmp/ff-ui-dom.txt
+          grep -q '"doubleClickDialog":true' /tmp/ff-ui-dom.txt
+
       - name: Deploy development to ShipStatic
         id: ship
         uses: shipstatic/action@v2
@@ -88,5 +145,6 @@ jobs:
           echo "### FrankiFlow Mail development" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- Branch: \`develop\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- UI smoke test: labels + sidebar scheduler + scheduler dialog + double-click dialog" >> "$GITHUB_STEP_SUMMARY"
           echo "- URL: https://mail-frankiflow.shipstatic.com" >> "$GITHUB_STEP_SUMMARY"
           echo "- Commit: \`${GITHUB_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
