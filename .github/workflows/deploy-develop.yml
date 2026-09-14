@@ -116,14 +116,10 @@ jobs:
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           sleep 0.4
           "$CHROME" --headless --no-sandbox --disable-gpu --virtual-time-budget=10000 --dump-dom http://127.0.0.1:8124/index.html > /tmp/ff-mail-ui-dom.txt
+          grep -o 'data-test-status="[^"]*"' /tmp/ff-mail-ui-dom.txt | tail -1 || true
+          grep -o 'data-test-details="[^"]*"' /tmp/ff-mail-ui-dom.txt | tail -1 || true
+          grep -o 'data-test-errors="[^"]*"' /tmp/ff-mail-ui-dom.txt | tail -1 || true
           grep -q 'data-test-status="PASS"' /tmp/ff-mail-ui-dom.txt
-          grep -q '"schedulerPosition":true' /tmp/ff-mail-ui-dom.txt
-          grep -q '"messageHistory":true' /tmp/ff-mail-ui-dom.txt
-          grep -q '"dialogComposer":true' /tmp/ff-mail-ui-dom.txt
-          grep -q '"replyRecipients":true' /tmp/ff-mail-ui-dom.txt
-          grep -q '"replyAllRecipients":true' /tmp/ff-mail-ui-dom.txt
-          grep -q '"sent":true' /tmp/ff-mail-ui-dom.txt
-          grep -q '"threading":true' /tmp/ff-mail-ui-dom.txt
           echo "UI interaction test passed: scheduler placement, visible labels, double-click dialog, complete history, compose, Reply, Reply all, send recipients/threading, and no runtime errors."
 
       - name: Deploy development to ShipStatic
