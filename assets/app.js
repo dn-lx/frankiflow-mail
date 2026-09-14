@@ -56,7 +56,12 @@ function count(folder){
 }
 function unreadCount(){return state.messages.filter(m=>m.folder==='inbox'&&!m.is_read).length;}
 function labelsFor(id){const ids=state.messageLabels.filter(x=>x.message_id===id).map(x=>x.label_id);return state.labels.filter(l=>ids.includes(l.id));}
-function threadFor(m){if(state.settings?.conversation_view===false)return[m].filter(Boolean);return m?.thread_id?state.messages.filter(x=>x.thread_id===m.thread_id).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)):[m].filter(Boolean);}
+function threadFor(m){
+  if(state.settings?.conversation_view===false)return[m].filter(Boolean);
+  if(!m?.thread_id)return[m].filter(Boolean);
+  const visible=state.messages.filter(x=>x.thread_id===m.thread_id&&x.folder!=='drafts'&&x.direction!=='draft').sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  return visible.length?visible:[m].filter(Boolean);
+}
 function senderName(m){return m.direction==='outbound'||['sent','scheduled'].includes(m.folder)?addresses(m.to_addresses):(m.from_name||m.from_address||'Unknown');}
 function effectiveFolder(m){if(m.folder==='snoozed'&&m.snoozed_until&&new Date(m.snoozed_until)<=new Date())return'inbox';return m.folder;}
 function advancedMatch(m,query){
@@ -245,7 +250,28 @@ function openComposer(seed={}){
   el.querySelector('#discardDraft').onclick=()=>discardComposer();['cTo','cCc','cBcc','cSubject'].forEach(id=>el.querySelector(`#${id}`)?.addEventListener('input',scheduleAutosave));editor.addEventListener('input',scheduleAutosave);
 }
 function openComposerFromDraft(m){openComposer({draftId:m.id,fromAddress:m.from_address,to:addresses(m.to_addresses),cc:addresses(m.cc_addresses),bcc:addresses(m.bcc_addresses),subject:m.subject,html:m.html_body||esc(m.text_body||'').replace(/\n/g,'<br>'),thread_id:m.thread_id});}
-async function closeComposer(){if(!state.composer)return;clearTimeout(state.composer.saveTimer);const d=composerData();if(!state.composer.draftId&&!composerHasMeaningfulContent(d)){state.composer.el.remove();state.composer=null;return;}await saveDraft();state.composer?.el.remove();state.composer=null;}
+function composerBodyHasMeaningfulContent(){
+  const editor=state.composer?.el?.querySelector('#cEditor');if(!editor)return false;
+  const clone=editor.cloneNode(true);
+  clone.querySelectorAll('.signature[data-ff-signature],[data-ff-meeting]').forEach(x=>x.remove());
+  return Boolean(stripHtml(clone.innerHTML).trim()||clone.querySelector('img'));
+}
+async function closeComposer(){
+  if(!state.composer)return;
+  clearTimeout(state.composer.saveTimer);
+  const d=composerData();
+  const replyContext=Boolean(state.composer.seed?.thread_id||state.composer.seed?.in_reply_to);
+  const hasReplyContent=composerBodyHasMeaningfulContent()||Boolean(state.composer.files?.length)||Boolean(state.composer.meeting);
+  if(replyContext&&!hasReplyContent){
+    const draftId=state.composer.draftId;
+    if(draftId)await supabase.from('frankiflow_mail_messages').delete().eq('id',draftId);
+    state.composer.el.remove();state.composer=null;
+    if(draftId)await loadAll();
+    return;
+  }
+  if(!state.composer.draftId&&!composerHasMeaningfulContent(d)){state.composer.el.remove();state.composer=null;return;}
+  await saveDraft();state.composer?.el.remove();state.composer=null;
+}
 async function discardComposer(){const d=state.composer?.draftId;if(d)await supabase.from('frankiflow_mail_messages').delete().eq('id',d);state.composer?.el.remove();state.composer=null;toast('Draft discarded','delete');await loadAll();}
 function composerData(){const c=state.composer?.el;if(!c)return null;return{fromAddress:c.querySelector('#cFrom').value,to:c.querySelector('#cTo').value,cc:c.querySelector('#cCc').value,bcc:c.querySelector('#cBcc').value,subject:c.querySelector('#cSubject').value,html:c.querySelector('#cEditor').innerHTML,text:c.querySelector('#cEditor').innerText,thread_id:state.composer.seed.thread_id||null,in_reply_to:state.composer.seed.in_reply_to||null};}
 function sanitizeRichHtml(html=''){

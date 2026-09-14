@@ -62,6 +62,18 @@ function injectEnhancementStyles() {
     .ff-standalone-shell{min-height:100vh;background:#f2f7f8;color:#17343d;padding:28px;box-sizing:border-box;font-family:Inter,system-ui,sans-serif}.ff-standalone-wrap{max-width:1050px;margin:0 auto}.ff-standalone-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.ff-standalone-brand{display:flex;align-items:center;gap:10px;font-weight:850;color:#0b3447}.ff-standalone-card{background:white;border:1px solid #dce8e5;border-radius:20px;box-shadow:0 18px 50px rgba(11,52,71,.08);overflow:hidden}.ff-standalone-head{padding:22px 26px;border-bottom:1px solid #e6eef0}.ff-standalone-head h1{font-size:24px;line-height:1.25;margin:0 0 10px}.ff-standalone-meta{display:flex;flex-wrap:wrap;gap:8px 16px;color:#667c84;font-size:13px}.ff-standalone-body{padding:22px 26px}.ff-close-window{border:1px solid #d4e1e4;background:#fff;border-radius:10px;padding:9px 12px;cursor:pointer;font-weight:700;color:#17343d}
     @media (max-width:780px){.ff-meeting-content{grid-template-columns:1fr}.ff-form-grid{grid-template-columns:1fr}.ff-form-grid .full{grid-column:auto}.ff-standalone-shell{padding:12px}.ff-standalone-body,.ff-standalone-head{padding:16px}}
   `;
+  style.textContent += `
+    .sidebar .labels-scroll{overflow:visible!important;max-height:none!important;flex:0 0 auto!important}
+    #meetingBtn{display:none!important}
+    .ff-message-dialog-backdrop{position:fixed;inset:0;z-index:12000;background:rgba(6,25,36,.58);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:22px}
+    .ff-message-dialog{width:min(1080px,96vw);max-height:92vh;display:flex;flex-direction:column;background:var(--surface,#fff);color:var(--text,#17343d);border:1px solid var(--line,#dce8e5);border-radius:22px;box-shadow:0 34px 100px rgba(0,0,0,.32);overflow:hidden}
+    .ff-message-dialog-head{display:flex;align-items:flex-start;gap:14px;padding:20px 22px;border-bottom:1px solid var(--line,#e4ecee);background:var(--surface,#fff)}
+    .ff-message-dialog-title{min-width:0;flex:1}.ff-message-dialog-title h2{margin:0 0 8px;font-size:22px;line-height:1.25;letter-spacing:-.025em}.ff-message-dialog-meta{display:flex;flex-wrap:wrap;gap:5px 16px;font-size:12px;color:var(--muted,#71848a)}
+    .ff-message-dialog-close{width:38px;height:38px;border:0;border-radius:10px;background:transparent;color:inherit;display:grid;place-items:center;cursor:pointer}.ff-message-dialog-close:hover{background:var(--surface-3,#eef3f5)}
+    .ff-message-dialog-body{overflow:auto;padding:20px 22px 26px;background:var(--surface-2,#f8fafb)}
+    .ff-message-dialog-body>.ff-rich-message{background:var(--surface,#fff);border:1px solid var(--line,#e3e9ec);border-radius:16px;padding:14px;box-shadow:0 10px 30px rgba(12,52,71,.06)}
+    @media(max-width:700px){.ff-message-dialog-backdrop{padding:0}.ff-message-dialog{width:100vw;height:100vh;max-height:none;border-radius:0}.ff-message-dialog-head{padding:16px}.ff-message-dialog-body{padding:12px}.ff-message-dialog-title h2{font-size:19px}}
+  `;
   document.head.appendChild(style);
 }
 
@@ -274,13 +286,26 @@ async function enhanceReader() {
   } finally { readerEnhancementBusy = false; }
 }
 
-function openMessageWindow(id) {
+async function openMessageWindow(id) {
   if (!id) return;
-  const url = new URL(location.href);
-  url.search = '';
-  url.hash = '';
-  url.searchParams.set('message', id);
-  window.open(url.toString(), '_blank', 'noopener');
+  const currentSession = await session();
+  if (!currentSession) return;
+  qs('.ff-message-dialog-backdrop')?.remove();
+  const { data: message, error } = await mailDb.from('frankiflow_mail_messages').select('*').eq('id', id).maybeSingle();
+  if (error || !message) return;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'ff-message-dialog-backdrop';
+  const received = new Date(message.received_at || message.sent_at || message.created_at).toLocaleString();
+  backdrop.innerHTML = `<section class="ff-message-dialog" role="dialog" aria-modal="true" aria-label="Email message"><header class="ff-message-dialog-head"><div class="ff-message-dialog-title"><h2>${esc(message.subject || '(no subject)')}</h2><div class="ff-message-dialog-meta"><span><b>From:</b> ${esc(message.from_name || message.from_address || '')} &lt;${esc(message.from_address || '')}&gt;</span><span><b>To:</b> ${esc((message.to_addresses || []).join(', '))}</span><span>${esc(received)}</span></div></div><button class="ff-message-dialog-close" type="button" title="Close" aria-label="Close">${icon('close')}</button></header><div class="ff-message-dialog-body" id="ffMessageDialogBody"></div></section>`;
+  document.body.appendChild(backdrop);
+  const body = qs('#ffMessageDialogBody', backdrop);
+  renderHtmlInto(body, message.html_body, message.text_body);
+  await renderAttachments(body, message.id);
+  const close = () => backdrop.remove();
+  qs('.ff-message-dialog-close', backdrop)?.addEventListener('click', close);
+  backdrop.addEventListener('click', event => { if (event.target === backdrop) close(); });
+  const onKey = event => { if (event.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); } };
+  document.addEventListener('keydown', onKey);
 }
 
 async function standaloneView() {
