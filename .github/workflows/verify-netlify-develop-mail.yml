@@ -1,0 +1,79 @@
+name: Verify Netlify develop mail UI
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - assets/app.js
+      - assets/settings-cleanup.js
+      - assets/settings-cleanup.css
+      - assets/config.js
+      - index.html
+      - sw.js
+      - .github/workflows/verify-netlify-develop-mail.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: develop
+      - name: JavaScript syntax
+        run: |
+          node --check assets/app.js
+          node --check assets/settings-cleanup.js
+          node --check assets/account-security.js
+          node --check assets/config.js
+      - name: Source assertions
+        run: |
+          grep -q "develop--frankiflow-mail.netlify.app" assets/config.js
+          ! grep -q "mail-frankiflow.shipstatic.com" assets/config.js
+          grep -q "thread:${m.thread_id}" assets/app.js
+          grep -q "conversation_view!==false" assets/app.js
+          grep -q "compose & reply" assets/settings-cleanup.js
+          grep -q "mail accounts" assets/settings-cleanup.js
+          grep -q "mail users & personal mailboxes" assets/settings-cleanup.js
+          grep -q "password-eye-btn" assets/settings-cleanup.js
+          grep -q "settings-cleanup.js" index.html
+          grep -q "frankiflow-mail-dev-v18" sw.js
+      - name: Headless settings cleanup test
+        run: |
+          set -euo pipefail
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$CHROME"
+          rm -rf /tmp/ffmail-cleanup && mkdir -p /tmp/ffmail-cleanup
+          node <<'NODE'
+          const fs=require('fs');
+          let src=fs.readFileSync('assets/settings-cleanup.js','utf8');
+          src=src.replace("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.116.0';\nimport { CONFIG } from './config.js';\n",`const CONFIG={supabaseUrl:'https://example.invalid',supabasePublishableKey:'test'};
+          const createClient=()=>({auth:{getUser:async()=>({data:{user:{id:'u1'}}})},from:()=>{const c={update(){return c},eq(){return Promise.resolve({data:null,error:null})}};return c}});
+          `);
+          fs.writeFileSync('/tmp/ffmail-cleanup/settings-cleanup.js',src);
+          fs.writeFileSync('/tmp/ffmail-cleanup/index.html',`<!doctype html><html><body>
+          <button id="notifyBtn">notify</button>
+          <div class="settings-hub">
+            <section class="settings-section"><h4>Appearance & reading</h4></section>
+            <section class="settings-section"><h4>Compose & reply</h4></section>
+            <section class="settings-section"><h4>Notifications</h4></section>
+            <section class="settings-section"><h4>Mail accounts</h4></section>
+            <section class="settings-section"><h4>Sender identity status</h4></section>
+            <section class="settings-section"><h4>Mail users & personal mailboxes</h4></section>
+            <section class="settings-section"><h4>Password & sign-in</h4><label>New<div><input data-new-password type="password"></div></label><label>Confirm<div><input data-confirm-password type="password"></div></label></section>
+            <section class="settings-section"><h4>Organization & tools</h4></section>
+          </div>
+          <script>window.__notify=0;Object.defineProperty(window,'Notification',{value:{permission:'granted'}});document.querySelector('#notifyBtn').onclick=()=>window.__notify++;function sleep(ms){return new Promise(r=>setTimeout(r,ms))}</script>
+          <script type="module" src="./settings-cleanup.js"></script>
+          <script>(async()=>{await sleep(700);const titles=[...document.querySelectorAll('.settings-section')].map(s=>({t:s.querySelector('h4').textContent.toLowerCase(),hidden:s.hidden}));const hidden=n=>titles.find(x=>x.t.includes(n))?.hidden===true;const eye=document.querySelector('.password-eye-btn');const input=document.querySelector('[data-new-password]');const before=input.type;eye?.click();const checks={compose:hidden('compose & reply'),notifications:hidden('notifications'),accounts:hidden('mail accounts'),identity:hidden('sender identity status'),users:hidden('mail users & personal mailboxes'),appearance:!hidden('appearance & reading'),organization:!hidden('organization & tools'),eyes:document.querySelectorAll('.password-eye-btn').length===2,reveal:before==='password'&&input.type==='text',notify:window.__notify>0};document.body.dataset.testStatus=Object.values(checks).every(Boolean)?'PASS':'FAIL';document.body.dataset.testDetails=JSON.stringify(checks)})();</script>
+          </body></html>`);
+          NODE
+          python3 -m http.server 8128 --directory /tmp/ffmail-cleanup >/tmp/ffmail-cleanup.log 2>&1 &
+          PID=$!; trap 'kill "$PID" 2>/dev/null || true' EXIT; sleep .4
+          "$CHROME" --headless --no-sandbox --disable-gpu --virtual-time-budget=5000 --dump-dom http://127.0.0.1:8128/index.html > /tmp/ffmail-cleanup-dom.txt
+          grep -o 'data-test-details="[^"]*"' /tmp/ffmail-cleanup-dom.txt | tail -1 || true
+          grep -q 'data-test-status="PASS"' /tmp/ffmail-cleanup-dom.txt
+          echo "Netlify develop UI regression checks passed."
