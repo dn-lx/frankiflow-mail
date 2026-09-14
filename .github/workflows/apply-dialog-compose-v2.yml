@@ -1,0 +1,55 @@
+name: Apply FrankiFlow Mail dialog compose v2
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: frankiflow-mail-dialog-compose-v2
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v6
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Apply dialog compose upgrade
+        run: python3 scripts/patch-dialog-compose-v2.py
+
+      - name: Validate JavaScript
+        run: |
+          node --check assets/app.js
+          node --check assets/enhancements.js
+          node --check assets/config.js
+
+      - name: Validate requested behavior markers
+        run: |
+          grep -q "dialogReplyTargets" assets/enhancements.js
+          grep -q "ff-dialog-compose" assets/enhancements.js
+          grep -q "replyRecipients" assets/app.js
+          ! grep -q "ffReaderMeeting" assets/enhancements.js
+          grep -q "frankiflow-mail-dev-v13" sw.js
+          grep -q "Headless dialog compose and reply-all test" .github/workflows/deploy-develop.yml
+
+      - name: Commit upgraded mail UI
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/app.js assets/enhancements.js sw.js .github/workflows/deploy-develop.yml
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Add compose and threaded replies to message dialog"
+          git push origin HEAD:develop
