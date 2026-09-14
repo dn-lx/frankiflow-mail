@@ -64,7 +64,10 @@ jobs:
           grep -q "FrankiFlow Mail" /tmp/mail-home.html
           grep -q "assets/modern.css" /tmp/mail-home.html
           grep -q "assets/enhancements.js" /tmp/mail-home.html
-          curl -fsSL "${DEV_URL}/assets/enhancements.js?verify=${GITHUB_SHA}" | grep -q "ffConnectionPill"
+          curl -fsSL "${DEV_URL}/assets/enhancements.js?verify=${GITHUB_SHA}" -o /tmp/mail-enhancements.js
+          grep -q "ffConnectionPill" /tmp/mail-enhancements.js
+          grep -q "ffMeetingBtn" /tmp/mail-enhancements.js
+          grep -q "ff-attachment-card" /tmp/mail-enhancements.js
 
       - name: Deployment summary
         run: |
