@@ -65,6 +65,9 @@ function injectEnhancementStyles() {
   style.textContent += `
     .sidebar .labels-scroll{overflow:visible!important;max-height:none!important;flex:0 0 auto!important}
     #meetingBtn{display:none!important}
+    #ffSidebarMeeting{margin:2px 0 8px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:rgba(255,255,255,.90)}
+    #ffSidebarMeeting:hover{background:rgba(255,255,255,.13);color:#fff;transform:translateX(2px)}
+    #ffSidebarMeeting .material-symbols-rounded{color:#78e0dc}
     .ff-message-dialog-backdrop{position:fixed;inset:0;z-index:12000;background:rgba(6,25,36,.58);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:22px}
     .ff-message-dialog{width:min(1080px,96vw);max-height:92vh;display:flex;flex-direction:column;background:var(--surface,#fff);color:var(--text,#17343d);border:1px solid var(--line,#dce8e5);border-radius:22px;box-shadow:0 34px 100px rgba(0,0,0,.32);overflow:hidden}
     .ff-message-dialog-head{display:flex;align-items:flex-start;gap:14px;padding:20px 22px;border-bottom:1px solid var(--line,#e4ecee);background:var(--surface,#fff)}
@@ -105,6 +108,25 @@ function decorateBrand() {
   words.appendChild(badge);
 }
 
+function decorateSidebarMeeting() {
+  const sidebar = qs('.sidebar');
+  if (!sidebar) return;
+  let button = qs('#ffSidebarMeeting', sidebar);
+  if (!button) {
+    button = document.createElement('button');
+    button.id = 'ffSidebarMeeting';
+    button.className = 'nav-btn';
+    button.type = 'button';
+    button.title = 'Meeting Scheduler';
+    button.setAttribute('aria-label', 'Meeting Scheduler');
+    button.innerHTML = `${icon('calendar_month')}<span class="nav-label">Meeting Scheduler</span>`;
+    const compose = qs('#composeMain', sidebar);
+    if (compose) compose.insertAdjacentElement('afterend', button);
+    else sidebar.prepend(button);
+    button.addEventListener('click', () => openMeetingScheduler());
+  }
+}
+
 function decorateTopbar() {
   const topbar = qs('.topbar');
   if (!topbar) return;
@@ -117,16 +139,7 @@ function decorateTopbar() {
     topbar.insertBefore(pill, firstButton || null);
   }
 
-  if (!qs('#ffMeetingBtn', topbar)) {
-    const meeting = document.createElement('button');
-    meeting.id = 'ffMeetingBtn';
-    meeting.className = 'icon-btn';
-    meeting.title = 'Meeting scheduler';
-    meeting.setAttribute('aria-label','Meeting scheduler');
-    meeting.innerHTML = `${icon('calendar_add_on')}<span class="ff-meeting-dot" aria-hidden="true"></span>`;
-    meeting.addEventListener('click', () => openMeetingScheduler());
-    topbar.appendChild(meeting);
-  }
+  qs('#ffMeetingBtn', topbar)?.remove();
 
   if (deferredInstallPrompt && !qs('#ffInstallApp', topbar)) {
     const install = document.createElement('button');
@@ -422,6 +435,7 @@ async function openMeetingScheduler(prefill = {}) {
 function decorate() {
   injectEnhancementStyles();
   decorateBrand();
+  decorateSidebarMeeting();
   decorateTopbar();
   updateUnreadTitle();
   standaloneView();
@@ -452,12 +466,22 @@ window.addEventListener('beforeinstallprompt', event => {
 });
 window.addEventListener('appinstalled', () => { deferredInstallPrompt = null; qs('#ffInstallApp')?.remove(); });
 
-document.addEventListener('dblclick', event => {
+let ffLastMailClick = { id:'', at:0 };
+document.addEventListener('click', event => {
   const attachment = event.target.closest?.('.ff-attachment-card');
   if (attachment) return;
   const row = event.target.closest?.('.mail-row');
   if (!row || event.target.closest('.row-check,.star-btn,button,a,input')) return;
-  event.preventDefault(); event.stopPropagation(); openMessageWindow(row.dataset.id);
+  const id = row.dataset.id || '';
+  const now = Date.now();
+  if (id && ffLastMailClick.id === id && now - ffLastMailClick.at <= 450) {
+    ffLastMailClick = { id:'', at:0 };
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    openMessageWindow(id);
+    return;
+  }
+  ffLastMailClick = { id, at:now };
 }, true);
 
 document.addEventListener('keydown', event => {
