@@ -3,6 +3,8 @@ import { CONFIG } from './config.js';
 
 const supabase=createClient(CONFIG.supabaseUrl,CONFIG.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 const ADMIN_URL=`${CONFIG.supabaseUrl}/functions/v1/mail-user-admin`;
+let legacyMailLabelId=null;
+let legacyMailLabelLoaded=false;
 
 const esc=(v='')=>String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));
 
@@ -31,6 +33,17 @@ async function currentMailUser(){
   if(!user)return null;
   const {data}=await supabase.from('frankiflow_mail_users').select('user_id,email,role,active').eq('user_id',user.id).maybeSingle();
   return data||null;
+}
+
+async function hideLegacyMailLabel(){
+  if(!legacyMailLabelLoaded){
+    legacyMailLabelLoaded=true;
+    try{
+      const {data}=await supabase.from('frankiflow_mail_labels').select('id').eq('system_key','account_mail').maybeSingle();
+      legacyMailLabelId=data?.id||null;
+    }catch{}
+  }
+  if(legacyMailLabelId)document.querySelector(`[data-label="${CSS.escape(legacyMailLabelId)}"]`)?.remove();
 }
 
 async function renderTeamUsers(root){
@@ -135,6 +148,7 @@ function enhanceLogin(){
 
 function removeLegacyMailUi(){
   document.querySelector('[data-mobile-filter="mail"]')?.remove();
+  hideLegacyMailLabel();
   for(const section of document.querySelectorAll('.settings-section')){
     const title=section.querySelector('h4')?.textContent?.trim().toLowerCase()||'';
     if(title.includes('sender identity status'))section.remove();
