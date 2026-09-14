@@ -42,7 +42,10 @@ jobs:
           grep -q "noindex,nofollow" _site/index.html
           ! grep -q "calendar-bridge.js" _site/index.html
           grep -q "ff-message-dialog-backdrop" _site/assets/enhancements.js
-          grep -q "Meeting scheduler" _site/assets/enhancements.js
+          grep -q "ffSidebarMeeting" _site/assets/enhancements.js
+          grep -q "Meeting Scheduler" _site/assets/enhancements.js
+          grep -q "ffLastMailClick" _site/assets/enhancements.js
+          grep -q "openMessageWindow(id)" _site/assets/enhancements.js
           grep -q "composerBodyHasMeaningfulContent" _site/assets/app.js
 
       - name: Deploy development to ShipStatic
@@ -71,10 +74,12 @@ jobs:
           ! grep -q "assets/calendar-bridge.js" /tmp/mail-home.html
           curl -fsSL "${DEV_URL}/assets/enhancements.js?verify=${GITHUB_SHA}" -o /tmp/mail-enhancements.js
           grep -q "ffConnectionPill" /tmp/mail-enhancements.js
-          grep -q "ffMeetingBtn" /tmp/mail-enhancements.js
+          grep -q "ffSidebarMeeting" /tmp/mail-enhancements.js
           grep -q "ff-attachment-card" /tmp/mail-enhancements.js
           grep -q "ff-message-dialog-backdrop" /tmp/mail-enhancements.js
           grep -q "sidebar .labels-scroll" /tmp/mail-enhancements.js
+          grep -q "ffLastMailClick" /tmp/mail-enhancements.js
+          grep -q "openMessageWindow(id)" /tmp/mail-enhancements.js
           curl -fsSL "${DEV_URL}/assets/app.js?verify=${GITHUB_SHA}" -o /tmp/mail-app.js
           grep -q "composerBodyHasMeaningfulContent" /tmp/mail-app.js
 
