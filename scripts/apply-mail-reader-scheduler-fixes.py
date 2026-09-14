@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 APP = Path('assets/app.js')
 ENH = Path('assets/enhancements.js')
@@ -8,108 +9,93 @@ app = APP.read_text(encoding='utf-8')
 enh = ENH.read_text(encoding='utf-8')
 sw = SW.read_text(encoding='utf-8')
 
+marker = "function updateDocumentTitle(){const n=unreadCount();document.title=n?`(${n}) FrankiFlow Mail`:'FrankiFlow Mail';}\n"
+if marker not in app:
+    raise SystemExit('updateDocumentTitle marker not found')
 
-def replace_once(text: str, old: str, new: str, label: str) -> str:
-    count = text.count(old)
-    if count != 1:
-        raise SystemExit(f'{label}: expected 1 match, found {count}')
-    return text.replace(old, new, 1)
-
-
-# 1) Drafts must never render as conversation messages. This removes the
-# empty/ghost thread card that appeared after opening and closing a reply composer.
-old_thread = "function threadFor(m){if(state.settings?.conversation_view===false)return[m].filter(Boolean);return m?.thread_id?state.messages.filter(x=>x.thread_id===m.thread_id).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)):[m].filter(Boolean);}"
-new_thread = """function threadFor(m){
-  if(state.settings?.conversation_view===false)return[m].filter(Boolean);
-  if(!m?.thread_id)return[m].filter(Boolean);
-  const visible=state.messages.filter(x=>x.thread_id===m.thread_id&&x.folder!=='drafts'&&x.direction!=='draft').sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
-  return visible.length?visible:[m].filter(Boolean);
-}"""
-app = replace_once(app, old_thread, new_thread, 'thread draft filtering')
-
-# 2) Closing an untouched reply composer should not manufacture an empty draft.
-old_close = "async function closeComposer(){if(!state.composer)return;clearTimeout(state.composer.saveTimer);const d=composerData();if(!state.composer.draftId&&!composerHasMeaningfulContent(d)){state.composer.el.remove();state.composer=null;return;}await saveDraft();state.composer?.el.remove();state.composer=null;}"
-new_close = """function composerBodyHasMeaningfulContent(){
-  const editor=state.composer?.el?.querySelector('#cEditor');if(!editor)return false;
-  const clone=editor.cloneNode(true);
-  clone.querySelectorAll('.signature[data-ff-signature],[data-ff-meeting]').forEach(x=>x.remove());
-  return Boolean(stripHtml(clone.innerHTML).trim()||clone.querySelector('img'));
+helper = r'''
+function sanitizeReaderEmailHtml(html=''){
+  const doc=new DOMParser().parseFromString(String(html||''),'text/html');
+  doc.querySelectorAll('script,iframe,object,embed,applet,form,input,textarea,select,button,meta[http-equiv="refresh"]').forEach(el=>el.remove());
+  doc.querySelectorAll('*').forEach(el=>{
+    [...el.attributes].forEach(attr=>{
+      if(/^on/i.test(attr.name))el.removeAttribute(attr.name);
+      if((attr.name==='href'||attr.name==='src')&&/^javascript:/i.test(attr.value.trim()))el.removeAttribute(attr.name);
+    });
+  });
+  doc.querySelectorAll('a[href]').forEach(a=>{a.target='_blank';a.rel='noopener noreferrer';});
+  doc.querySelectorAll('img').forEach(img=>{img.loading='lazy';img.referrerPolicy='no-referrer';img.style.maxWidth='100%';});
+  const base=doc.createElement('base');base.target='_blank';doc.head.prepend(base);
+  const fit=doc.createElement('style');
+  fit.textContent='html,body{max-width:100%;overflow-wrap:anywhere} body{margin:0!important} table{max-width:100%} img{height:auto!important}';
+  doc.head.appendChild(fit);
+  return '<!doctype html>'+doc.documentElement.outerHTML;
 }
-async function closeComposer(){
-  if(!state.composer)return;
-  clearTimeout(state.composer.saveTimer);
-  const d=composerData();
-  const replyContext=Boolean(state.composer.seed?.thread_id||state.composer.seed?.in_reply_to);
-  const hasReplyContent=composerBodyHasMeaningfulContent()||Boolean(state.composer.files?.length)||Boolean(state.composer.meeting);
-  if(replyContext&&!hasReplyContent){
-    const draftId=state.composer.draftId;
-    if(draftId)await supabase.from('frankiflow_mail_messages').delete().eq('id',draftId);
-    state.composer.el.remove();state.composer=null;
-    if(draftId)await loadAll();
-    return;
+function renderReaderEmailBody(container,message){
+  if(!container||!message)return;
+  container.innerHTML='';
+  container.dataset.ffRich='1';
+  container.dataset.messageId=message.id||'';
+  const rich=document.createElement('div');
+  rich.className='ff-rich-message';
+  rich.style.marginTop='10px';
+  container.appendChild(rich);
+  if(message.html_body){
+    const frame=document.createElement('iframe');
+    frame.className='ff-email-frame';
+    frame.setAttribute('sandbox','allow-same-origin allow-popups allow-popups-to-escape-sandbox');
+    frame.setAttribute('referrerpolicy','no-referrer');
+    frame.style.cssText='display:block;width:100%;min-height:180px;border:0;background:#fff;border-radius:14px;overflow:hidden';
+    frame.srcdoc=sanitizeReaderEmailHtml(message.html_body);
+    frame.addEventListener('load',()=>{
+      try{
+        const resize=()=>{
+          const doc=frame.contentDocument;if(!doc)return;
+          const h=Math.max(doc.body?.scrollHeight||0,doc.documentElement?.scrollHeight||0,180);
+          frame.style.height=`${Math.min(Math.max(h+6,180),5000)}px`;
+        };
+        resize();setTimeout(resize,120);setTimeout(resize,500);
+      }catch(error){console.warn('Could not auto-size email frame',error);}
+    });
+    rich.appendChild(frame);
+  }else{
+    const text=document.createElement('div');
+    text.style.whiteSpace='pre-wrap';text.style.lineHeight='1.65';text.textContent=message.text_body||'';
+    rich.appendChild(text);
   }
-  if(!state.composer.draftId&&!composerHasMeaningfulContent(d)){state.composer.el.remove();state.composer=null;return;}
-  await saveDraft();state.composer?.el.remove();state.composer=null;
-}"""
-app = replace_once(app, old_close, new_close, 'composer close behavior')
+}
+'''
+if 'function sanitizeReaderEmailHtml' not in app:
+    app = app.replace(marker, marker + helper, 1)
 
-# 3) UX overrides: labels use all available sidebar space, the meeting scheduler
-# is a separate Outlook-style surface (not embedded in Compose), and message
-# double-click opens an in-app dialog.
-old_append = "  document.head.appendChild(style);"
-new_append = """  style.textContent += `
-    .sidebar .labels-scroll{overflow:visible!important;max-height:none!important;flex:0 0 auto!important}
-    #meetingBtn{display:none!important}
-    .ff-message-dialog-backdrop{position:fixed;inset:0;z-index:12000;background:rgba(6,25,36,.58);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:22px}
-    .ff-message-dialog{width:min(1080px,96vw);max-height:92vh;display:flex;flex-direction:column;background:var(--surface,#fff);color:var(--text,#17343d);border:1px solid var(--line,#dce8e5);border-radius:22px;box-shadow:0 34px 100px rgba(0,0,0,.32);overflow:hidden}
-    .ff-message-dialog-head{display:flex;align-items:flex-start;gap:14px;padding:20px 22px;border-bottom:1px solid var(--line,#e4ecee);background:var(--surface,#fff)}
-    .ff-message-dialog-title{min-width:0;flex:1}.ff-message-dialog-title h2{margin:0 0 8px;font-size:22px;line-height:1.25;letter-spacing:-.025em}.ff-message-dialog-meta{display:flex;flex-wrap:wrap;gap:5px 16px;font-size:12px;color:var(--muted,#71848a)}
-    .ff-message-dialog-close{width:38px;height:38px;border:0;border-radius:10px;background:transparent;color:inherit;display:grid;place-items:center;cursor:pointer}.ff-message-dialog-close:hover{background:var(--surface-3,#eef3f5)}
-    .ff-message-dialog-body{overflow:auto;padding:20px 22px 26px;background:var(--surface-2,#f8fafb)}
-    .ff-message-dialog-body>.ff-rich-message{background:var(--surface,#fff);border:1px solid var(--line,#e3e9ec);border-radius:16px;padding:14px;box-shadow:0 10px 30px rgba(12,52,71,.06)}
-    @media(max-width:700px){.ff-message-dialog-backdrop{padding:0}.ff-message-dialog{width:100vw;height:100vh;max-height:none;border-radius:0}.ff-message-dialog-head{padding:16px}.ff-message-dialog-body{padding:12px}.ff-message-dialog-title h2{font-size:19px}}
-  `;
-  document.head.appendChild(style);"""
-enh = replace_once(enh, old_append, new_append, 'enhancement style overrides')
+pattern = re.compile(r'function renderThreadCard\(x\)\{return`<article class="thread-card">.*?</article>`;\}\nfunction quickReplyHtml', re.S)
+replacement = '''function renderThreadCard(x){return`<article class="thread-card" data-message-id="${esc(x.id||'')}"><div class="thread-card-head"><div class="avatar">${initials(x.from_name||x.from_address)}</div><div class="who"><strong>${esc(x.from_name||x.from_address)}</strong><div class="meta">${esc(x.from_address)} → ${esc(addresses(x.to_addresses))}${arr(x.cc_addresses).length?` · cc ${esc(addresses(x.cc_addresses))}`:''}</div></div><time>${fmtFull(x.received_at||x.sent_at||x.created_at)}</time></div><div class="thread-body" data-message-id="${esc(x.id||'')}"></div></article>`;}
+function quickReplyHtml'''
+app, count = pattern.subn(replacement, app, count=1)
+if count != 1 and 'data-message-id="${esc(x.id||'')}"' not in app:
+    raise SystemExit(f'renderThreadCard replacement count={count}')
 
-old_window = """function openMessageWindow(id) {
-  if (!id) return;
-  const url = new URL(location.href);
-  url.search = '';
-  url.hash = '';
-  url.searchParams.set('message', id);
-  window.open(url.toString(), '_blank', 'noopener');
-}"""
-new_window = """async function openMessageWindow(id) {
-  if (!id) return;
-  const currentSession = await session();
-  if (!currentSession) return;
-  qs('.ff-message-dialog-backdrop')?.remove();
-  const { data: message, error } = await mailDb.from('frankiflow_mail_messages').select('*').eq('id', id).maybeSingle();
-  if (error || !message) return;
-  const backdrop = document.createElement('div');
-  backdrop.className = 'ff-message-dialog-backdrop';
-  const received = new Date(message.received_at || message.sent_at || message.created_at).toLocaleString();
-  backdrop.innerHTML = `<section class="ff-message-dialog" role="dialog" aria-modal="true" aria-label="Email message"><header class="ff-message-dialog-head"><div class="ff-message-dialog-title"><h2>${esc(message.subject || '(no subject)')}</h2><div class="ff-message-dialog-meta"><span><b>From:</b> ${esc(message.from_name || message.from_address || '')} &lt;${esc(message.from_address || '')}&gt;</span><span><b>To:</b> ${esc((message.to_addresses || []).join(', '))}</span><span>${esc(received)}</span></div></div><button class="ff-message-dialog-close" type="button" title="Close" aria-label="Close">${icon('close')}</button></header><div class="ff-message-dialog-body" id="ffMessageDialogBody"></div></section>`;
-  document.body.appendChild(backdrop);
-  const body = qs('#ffMessageDialogBody', backdrop);
-  renderHtmlInto(body, message.html_body, message.text_body);
-  await renderAttachments(body, message.id);
-  const close = () => backdrop.remove();
-  qs('.ff-message-dialog-close', backdrop)?.addEventListener('click', close);
-  backdrop.addEventListener('click', event => { if (event.target === backdrop) close(); });
-  const onKey = event => { if (event.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); } };
-  document.addEventListener('keydown', onKey);
-}"""
-enh = replace_once(enh, old_window, new_window, 'double-click message dialog')
+reader_hook = "  document.querySelector('#backReader').onclick=()=>panel.classList.remove('open');"
+initial_render = "  document.querySelectorAll('#reader .thread-card').forEach((card,index)=>{const message=thread[index];const body=card.querySelector('.thread-body');if(body&&message)renderReaderEmailBody(body,message);});\n"
+if reader_hook not in app:
+    raise SystemExit('renderReader hook not found')
+if initial_render not in app:
+    app = app.replace(reader_hook, initial_render + reader_hook, 1)
 
-# Force installed/PWA clients to pick up the new shell immediately.
-if "frankiflow-mail-dev-v11" in sw:
-    sw = sw.replace("frankiflow-mail-dev-v11", "frankiflow-mail-dev-v12", 1)
-elif "frankiflow-mail-dev-v12" not in sw:
-    raise SystemExit('service worker cache marker changed')
+old = """      const body = qs('.thread-body', card);\n      if (!body || body.dataset.ffRich === '1') return;\n      body.dataset.ffRich = '1';\n      renderHtmlInto(body, message.html_body, message.text_body);\n      renderAttachments(body, message.id);"""
+new = """      const body = qs('.thread-body', card);\n      if (!body) return;\n      if (body.dataset.ffRich !== '1') {\n        body.dataset.ffRich = '1';\n        renderHtmlInto(body, message.html_body, message.text_body);\n      }\n      if (body.dataset.ffAttachments !== '1') {\n        body.dataset.ffAttachments = '1';\n        renderAttachments(body, message.id);\n      }"""
+if old in enh:
+    enh = enh.replace(old, new, 1)
+elif "body.dataset.ffAttachments !== '1'" not in enh:
+    raise SystemExit('enhanceReader body block not found')
+
+# Refresh installed/PWA clients after the reader change.
+match = re.search(r'frankiflow-mail-dev-v(\d+)', sw)
+if match:
+    version = int(match.group(1))
+    sw = sw.replace(match.group(0), f'frankiflow-mail-dev-v{version + 1}', 1)
 
 APP.write_text(app, encoding='utf-8')
 ENH.write_text(enh, encoding='utf-8')
 SW.write_text(sw, encoding='utf-8')
-print('Applied reader, labels, scheduler, dialog and composer fixes.')
+print('Applied immediate rich-reader rendering without a second body replacement.')
