@@ -160,7 +160,17 @@ function currentMessages(){
       return labelNames.includes(f)||account===`${f}@frankiflow.de`;
     });
   }
-  return list.sort((a,b)=>(b.is_pinned-a.is_pinned)||new Date(b.received_at||b.sent_at||b.created_at)-new Date(a.received_at||a.sent_at||a.created_at));
+  list=list.sort((a,b)=>(b.is_pinned-a.is_pinned)||new Date(b.received_at||b.sent_at||b.created_at)-new Date(a.received_at||a.sent_at||a.created_at));
+  if(state.settings?.conversation_view!==false){
+    const seen=new Set();
+    list=list.filter(m=>{
+      const key=m.thread_id?`thread:${m.thread_id}`:`message:${m.id}`;
+      if(seen.has(key))return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  return list;
 }
 function renderApp(){
   applyTheme();
