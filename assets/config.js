@@ -1,5 +1,5 @@
 const hostname = globalThis.location?.hostname || '';
-const isDevelopment = hostname === 'mail-frankiflow.shipstatic.com' || hostname === 'localhost' || hostname === '127.0.0.1';
+const isDevelopment = hostname === 'develop--frankiflow-mail.netlify.app' || hostname === 'localhost' || hostname === '127.0.0.1';
 
 export const CONFIG = {
   appName: 'FrankiFlow Mail',
