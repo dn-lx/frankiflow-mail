@@ -1,0 +1,119 @@
+name: Apply console cleanup
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - .github/workflows/apply-console-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: develop
+          fetch-depth: 0
+      - name: Apply shared Supabase client and console cleanup
+        run: |
+          set -euo pipefail
+          cat > assets/supabase-client.js <<'EOF'
+          import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.116.0';
+          import { CONFIG } from './config.js';
+
+          const KEY='__FRANKIFLOW_MAIL_SUPABASE__';
+          const existing=globalThis[KEY];
+          export const supabase=existing||createClient(CONFIG.supabaseUrl,CONFIG.supabasePublishableKey,{
+            auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}
+          });
+          if(!existing)globalThis[KEY]=supabase;
+          EOF
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          p=Path('assets/app.js')
+          s=p.read_text()
+          old="""import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.116.0';
+          import { CONFIG } from './config.js';
+
+          const supabase = createClient(CONFIG.supabaseUrl, CONFIG.supabasePublishableKey, {
+            auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+          });
+          """
+          new="""import { supabase } from './supabase-client.js';
+          import { CONFIG } from './config.js';
+          """
+          if old not in s: raise SystemExit('app.js Supabase header not found')
+          p.write_text(s.replace(old,new,1))
+
+          p=Path('assets/enhancements.js')
+          s=p.read_text()
+          s=s.replace("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.116.0';\n", "import { supabase as mailDb } from './supabase-client.js';\n",1)
+          old="""const mailDb = createClient(CONFIG.supabaseUrl, CONFIG.supabasePublishableKey, {
+            auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+          });
+          """
+          if old not in s: raise SystemExit('enhancements.js mailDb block not found')
+          s=s.replace(old,'',1)
+          old_prompt="""window.addEventListener('beforeinstallprompt', event => {
+            event.preventDefault(); deferredInstallPrompt = event; scheduleDecorate();
+          });
+          """
+          if old_prompt in s:
+            s=s.replace(old_prompt,"// Let the browser manage the install prompt to avoid console warnings.\n",1)
+          p.write_text(s)
+
+          for name in ['assets/account-security.js','assets/settings-cleanup.js']:
+            p=Path(name); s=p.read_text()
+            s=s.replace("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.116.0';\nimport { CONFIG } from './config.js';\n\n", "import { supabase } from './supabase-client.js';\n",1)
+            import re
+            s,n=re.subn(r"const supabase=createClient\(CONFIG\.supabaseUrl,CONFIG\.supabasePublishableKey,\{auth:\{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true\}\}\);\n",'',s,count=1)
+            if n!=1: raise SystemExit(f'{name} client block not found')
+            p.write_text(s)
+
+          p=Path('index.html'); s=p.read_text()
+          s=s.replace('<meta name="apple-mobile-web-app-capable" content="yes" />','<meta name="mobile-web-app-capable" content="yes" />')
+          p.write_text(s)
+
+          p=Path('sw.js'); s=p.read_text()
+          s=s.replace("const CACHE = 'frankiflow-mail-dev-v19';","const CACHE = 'frankiflow-mail-dev-v20';")
+          if "'/assets/supabase-client.js'" not in s:
+            s=s.replace("  '/assets/config.js',","  '/assets/config.js',\n  '/assets/supabase-client.js',")
+          p.write_text(s)
+
+          p=Path('.github/workflows/verify-netlify-develop-mail.yml'); s=p.read_text()
+          s=s.replace("      - assets/app.js\n", "      - assets/app.js\n      - assets/enhancements.js\n      - assets/supabase-client.js\n")
+          s=s.replace("grep -q 'frankiflow-mail-dev-v19' sw.js","grep -q 'frankiflow-mail-dev-v20' sw.js")
+          marker="          grep -q 'settings-cleanup.js' index.html\n"
+          extra=("          grep -q \"supabase-client.js\" assets/app.js\n"
+                 "          grep -q \"supabase-client.js\" assets/enhancements.js\n"
+                 "          grep -q \"supabase-client.js\" assets/account-security.js\n"
+                 "          grep -q \"supabase-client.js\" assets/settings-cleanup.js\n"
+                 "          ! grep -q \"createClient\" assets/app.js\n"
+                 "          ! grep -q \"createClient\" assets/enhancements.js\n"
+                 "          ! grep -q \"apple-mobile-web-app-capable\" index.html\n")
+          if extra.strip() not in s:
+            s=s.replace(marker,marker+extra)
+          p.write_text(s)
+          PY
+
+      - name: Validate JavaScript
+        run: |
+          node --check assets/app.js
+          node --check assets/enhancements.js
+          node --check assets/account-security.js
+          node --check assets/settings-cleanup.js
+          node --check assets/supabase-client.js
+          node --check sw.js
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm .github/workflows/apply-console-cleanup.yml
+          git add -A
+          git commit -m "Fix Mail console errors and share Supabase client"
+          git push origin develop
