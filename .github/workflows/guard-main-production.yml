@@ -1,0 +1,27 @@
+name: Guard production main
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, labeled]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  require-production-approval:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require production-approved label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if jq -e '.pull_request.labels[]? | select(.name == "production-approved")' "$GITHUB_EVENT_PATH" >/dev/null; then
+            echo "Production approval label present. PR may remain open."
+            exit 0
+          fi
+          echo "No production-approved label. Closing PR to main."
+          gh pr close "$PR_NUMBER" --repo "$REPO"
