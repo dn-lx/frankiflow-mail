@@ -1,7 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.116.0';
-import { CONFIG } from './config.js';
-
-const supabase=createClient(CONFIG.supabaseUrl,CONFIG.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+import { supabase } from './supabase-client.js';
 let legacyMailLabelId=null;
 let legacyMailLabelLoaded=false;
 

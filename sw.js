@@ -12,6 +12,7 @@ const SHELL = [
   '/assets/account-security.js',
   '/assets/settings-cleanup.js',
   '/assets/config.js',
+  '/assets/supabase-client.js',
   '/assets/icon.svg'
 ];
 

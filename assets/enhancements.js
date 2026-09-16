@@ -1,11 +1,8 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.116.0';
+import { supabase as mailDb } from './supabase-client.js';
 import { CONFIG } from './config.js';
 
 const qs = (s, root = document) => root.querySelector(s);
 const qsa = (s, root = document) => [...root.querySelectorAll(s)];
-const mailDb = createClient(CONFIG.supabaseUrl, CONFIG.supabasePublishableKey, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-});
 const ATTACHMENT_BUCKET = 'frankiflow-mail-attachments';
 const MEETING_TZ = 'Europe/Berlin';
 let deferredInstallPrompt = null;
@@ -727,9 +724,7 @@ function focusSearch() {
 
 window.addEventListener('online', updateConnectionPill);
 window.addEventListener('offline', updateConnectionPill);
-window.addEventListener('beforeinstallprompt', event => {
-  event.preventDefault(); deferredInstallPrompt = event; scheduleDecorate();
-});
+// Browser handles the install prompt natively.
 window.addEventListener('appinstalled', () => { deferredInstallPrompt = null; qs('#ffInstallApp')?.remove(); });
 
 let ffLastMailClick = { id:'', at:0 };

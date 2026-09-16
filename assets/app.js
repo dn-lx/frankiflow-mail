@@ -1,9 +1,5 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.116.0';
+import { supabase } from './supabase-client.js';
 import { CONFIG } from './config.js';
-
-const supabase = createClient(CONFIG.supabaseUrl, CONFIG.supabasePublishableKey, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-});
 
 const root = document.querySelector('#app');
 const toastStack = document.createElement('div'); toastStack.className='toast-stack'; document.body.append(toastStack);
