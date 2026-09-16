@@ -1,6 +1,5 @@
 [build]
   publish = "."
-  ignore = "test \"$BRANCH\" = \"main\""
 
 [context.develop]
   publish = "."
