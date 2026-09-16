@@ -1,4 +1,4 @@
-name: Apply console cleanup
+name: Apply console cleanup source patch
 
 on:
   push:
@@ -17,7 +17,7 @@ jobs:
         with:
           ref: develop
           fetch-depth: 0
-      - name: Apply shared Supabase client and console cleanup
+      - name: Apply frontend console cleanup
         run: |
           set -euo pipefail
           cat > assets/supabase-client.js <<'EOF'
@@ -34,6 +34,7 @@ jobs:
 
           python3 <<'PY'
           from pathlib import Path
+          import re
 
           p=Path('assets/app.js')
           s=p.read_text()
@@ -64,13 +65,12 @@ jobs:
           });
           """
           if old_prompt in s:
-            s=s.replace(old_prompt,"// Let the browser manage the install prompt to avoid console warnings.\n",1)
+            s=s.replace(old_prompt,"// Browser handles the install prompt natively.\n",1)
           p.write_text(s)
 
           for name in ['assets/account-security.js','assets/settings-cleanup.js']:
             p=Path(name); s=p.read_text()
             s=s.replace("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.116.0';\nimport { CONFIG } from './config.js';\n\n", "import { supabase } from './supabase-client.js';\n",1)
-            import re
             s,n=re.subn(r"const supabase=createClient\(CONFIG\.supabaseUrl,CONFIG\.supabasePublishableKey,\{auth:\{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true\}\}\);\n",'',s,count=1)
             if n!=1: raise SystemExit(f'{name} client block not found')
             p.write_text(s)
@@ -80,24 +80,8 @@ jobs:
           p.write_text(s)
 
           p=Path('sw.js'); s=p.read_text()
-          s=s.replace("const CACHE = 'frankiflow-mail-dev-v19';","const CACHE = 'frankiflow-mail-dev-v20';")
           if "'/assets/supabase-client.js'" not in s:
             s=s.replace("  '/assets/config.js',","  '/assets/config.js',\n  '/assets/supabase-client.js',")
-          p.write_text(s)
-
-          p=Path('.github/workflows/verify-netlify-develop-mail.yml'); s=p.read_text()
-          s=s.replace("      - assets/app.js\n", "      - assets/app.js\n      - assets/enhancements.js\n      - assets/supabase-client.js\n")
-          s=s.replace("grep -q 'frankiflow-mail-dev-v19' sw.js","grep -q 'frankiflow-mail-dev-v20' sw.js")
-          marker="          grep -q 'settings-cleanup.js' index.html\n"
-          extra=("          grep -q \"supabase-client.js\" assets/app.js\n"
-                 "          grep -q \"supabase-client.js\" assets/enhancements.js\n"
-                 "          grep -q \"supabase-client.js\" assets/account-security.js\n"
-                 "          grep -q \"supabase-client.js\" assets/settings-cleanup.js\n"
-                 "          ! grep -q \"createClient\" assets/app.js\n"
-                 "          ! grep -q \"createClient\" assets/enhancements.js\n"
-                 "          ! grep -q \"apple-mobile-web-app-capable\" index.html\n")
-          if extra.strip() not in s:
-            s=s.replace(marker,marker+extra)
           p.write_text(s)
           PY
 
@@ -109,11 +93,15 @@ jobs:
           node --check assets/settings-cleanup.js
           node --check assets/supabase-client.js
           node --check sw.js
-      - name: Commit cleanup
+          grep -q "supabase-client.js" assets/app.js
+          grep -q "supabase-client.js" assets/enhancements.js
+          grep -q "supabase-client.js" assets/account-security.js
+          grep -q "supabase-client.js" assets/settings-cleanup.js
+          ! grep -q "apple-mobile-web-app-capable" index.html
+      - name: Commit source cleanup
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm .github/workflows/apply-console-cleanup.yml
-          git add -A
+          git add assets/app.js assets/enhancements.js assets/account-security.js assets/settings-cleanup.js assets/supabase-client.js index.html sw.js
           git commit -m "Fix Mail console errors and share Supabase client"
           git push origin develop
