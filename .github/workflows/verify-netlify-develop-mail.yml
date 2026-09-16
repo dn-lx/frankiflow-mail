@@ -44,7 +44,11 @@ jobs:
           ! grep -q 'data-create-mail-user' assets/account-security.js
           ! grep -q 'mail-user-list' assets/account-security.js
           grep -q 'settings-cleanup.js' index.html
-          grep -q 'frankiflow-mail-dev-v18' sw.js
+          grep -q 'frankiflow-mail-dev-v19' sw.js
+          grep -Fq '@media (min-width:821px)' assets/settings-cleanup.css
+          grep -Fq 'position:fixed!important' assets/settings-cleanup.css
+          grep -Fq 'account-actions{display:flex!important}' assets/settings-cleanup.css
+          grep -Fq -- '--sidebar-w:210px' assets/settings-cleanup.css
       - name: Headless settings cleanup test
         run: |
           set -euo pipefail
