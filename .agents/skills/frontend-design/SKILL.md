@@ -30,3 +30,7 @@ Use a calm productivity-tool direction: compact but readable density, strong inb
 ## Verification
 
 Inspect the rendered page, console, responsive behavior and affected mail interaction. Use browser automation when available. Visual improvements never justify weakening mailbox authorization, sanitization or send-state correctness.
+## Canonical brand assets
+
+Before implementing branded UI, read `.agents/skills/brand-assets/SKILL.md` and inspect `brand/`. Reuse approved repository logos/icons. Do not generate, redraw or approximate a brand mark when a canonical asset exists.
+
