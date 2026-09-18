@@ -1,6 +1,11 @@
 name: Daily Engineering Improvement
 
 on:
+  push:
+    branches: [develop]
+    paths:
+      - scripts/engineering-improvement.mjs
+      - .github/workflows/daily-engineering-improvement.yml
   schedule:
     - cron: "0 18 * * *"
   workflow_dispatch:
