@@ -1,6 +1,11 @@
 name: Documentation drift
 
 on:
+  push:
+    branches: [develop]
+    paths:
+      - scripts/documentation-drift.mjs
+      - .github/workflows/documentation-drift.yml
   schedule:
     - cron: "0 17 * * *"
   workflow_dispatch:
