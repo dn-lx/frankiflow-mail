@@ -51,7 +51,6 @@ jobs:
           echo "No obvious secret pattern found."
 
   runtime-dependencies:
-    if: ${{ hashFiles('package.json') != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -59,7 +58,13 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-      - name: Build temporary dependency lock for audit
-        run: npm install --package-lock-only --ignore-scripts --no-fund
-      - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
+      - name: Audit production dependencies when package.json exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f package.json ]]; then
+            echo "No package.json; dependency audit not applicable."
+            exit 0
+          fi
+          npm install --package-lock-only --ignore-scripts --no-fund
+          npm audit --omit=dev --audit-level=high
