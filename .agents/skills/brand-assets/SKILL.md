@@ -16,3 +16,5 @@ Before creating, editing, exporting or displaying a logo, icon, favicon, quotati
 7. If an expected brand file is missing, stop and report the gap rather than inventing one.
 
 Frontend Design and documentation work must follow this skill.
+
+9. For white/light document backgrounds and quotations, use `brand/frankiflow/frankiflow-full-transparent-1024.png`. Avoid the navy boxed logo on white pages.
