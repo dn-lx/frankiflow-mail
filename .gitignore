@@ -1,0 +1,5 @@
+
+# Local Graphify tooling and derived code maps
+.venv-graphify/
+.graphify/
+graphify-out/

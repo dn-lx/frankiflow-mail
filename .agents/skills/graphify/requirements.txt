@@ -1,0 +1,2 @@
+# Development tool only; installed in an isolated Python environment.
+graphifyy==0.9.63

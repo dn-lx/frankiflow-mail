@@ -1,0 +1,42 @@
+# Developer metadata, dependencies and generated output
+.git/
+.agents/
+.graphify/
+graphify-out/
+.venv-graphify/
+.venv/
+venv/
+node_modules/
+.netlify/
+dist/
+build/
+coverage/
+__pycache__/
+*.min.js
+*.map
+
+# Secrets and local data (never index, even if accidentally tracked)
+.env
+.env.*
+**/.env
+**/.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+*.sqlite
+*.sqlite3
+*.db
+*.log
+
+# Binary/media exports
+*.zip
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.mp3
+*.mp4
