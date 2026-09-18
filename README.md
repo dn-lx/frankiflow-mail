@@ -1,5 +1,7 @@
 # FrankiFlow Mail
 
+**FrankiFlow Projects:** This repository is part of the FrankiFlow project family. See [`PROJECT-FAMILY.md`](PROJECT-FAMILY.md) for the shared engineering/agent architecture.
+
 Modern internal webmail for FrankiFlow team and shared company mailboxes.
 
 ## Branches
