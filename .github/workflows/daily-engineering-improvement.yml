@@ -1,0 +1,36 @@
+name: Daily Engineering Improvement
+
+on:
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: develop
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Build engineering improvement report
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/engineering-improvement.mjs | tee /tmp/engineering-report.txt
+          cat engineering-improvement-report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload report
+        uses: actions/upload-artifact@v5
+        with:
+          name: engineering-improvement-${{ github.run_id }}
+          path: engineering-improvement-report.md
+          retention-days: 30
