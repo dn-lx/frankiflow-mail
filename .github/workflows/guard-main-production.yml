@@ -26,14 +26,14 @@ jobs:
 
           if [[ "$HEAD_REF" != "develop" || "$HEAD_REPO" != "$REPO" ]]; then
             echo "Only develop from this repository may merge into main."
-            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "Production policy: only the repository's `develop` branch may merge into `main`. This PR has been closed because its source branch is `$HEAD_REF`."
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "Production policy: only the repository develop branch may merge into main. This PR was closed because its source branch is: $HEAD_REF."
             gh pr close "$PR_NUMBER" --repo "$REPO"
             exit 1
           fi
 
           if ! jq -e '.pull_request.labels[]? | select(.name == "production-approved")' "$GITHUB_EVENT_PATH" >/dev/null; then
             echo "develop -> main requires production-approved."
-            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "Production policy: `develop` → `main` also requires the `production-approved` label."
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "Production policy: develop -> main also requires the production-approved label."
             gh pr close "$PR_NUMBER" --repo "$REPO"
             exit 1
           fi
