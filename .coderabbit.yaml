@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 language: "en-US"
 
 reviews:
@@ -7,9 +8,17 @@ reviews:
   poem: false
   review_status: true
   collapse_walkthrough: false
+  path_filters:
+    - "!node_modules/**"
+    - "!dist/**"
+    - "!coverage/**"
+    - "!.graphify/**"
   auto_review:
     enabled: true
     drafts: false
+    auto_incremental_review: true
+    base_branches:
+      - "develop"
 
 chat:
   auto_reply: true
