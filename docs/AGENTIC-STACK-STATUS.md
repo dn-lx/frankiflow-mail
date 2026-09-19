@@ -1,29 +1,38 @@
-# Agentic Stack Status — FrankiFlow Mail
+# Agentic / Engineering Stack Status
 
-Verified against the `develop` branch on 2026-09-18.
+Verified against `develop`: 2026-09-19.
 
-| Layer | Status | Verification / remaining action |
+## Active stack
+
+| Layer | Status | Notes |
 | --- | --- | --- |
-| GitHub source of truth | ✅ In place | `develop` is the development branch; `main` remains production. Repository rules, skills, ADRs, tests and CI live in GitHub. |
-| Agent Skills | ✅ In place | Project skill plus Graphify, Context7 policy, Frontend Design and Headroom pilot skills are committed. |
-| Graphify | ✅ In place | Local developer-only code graph workflow is documented; generated graphs are ignored and not authoritative. |
-| ADRs | ✅ In place | GitHub-centered agentic engineering ADR is committed. |
-| Context7 | ⚠️ Repo-ready / external connection | Usage policy is committed. Connect Context7 in Cursor/Codex/other agent host when available. |
-| Frontend Design | ✅ In place | Project-specific frontend design skill is committed. |
-| Headroom | 🧪 Pilot-ready / external connection | Opt-in policy and safety boundaries are committed. Install/connect Headroom only for measured context-compression trials. |
-| Playwright browser smoke tests | ✅ In place | Read-only local browser tests and GitHub Actions workflow are committed. External production writes are blocked/avoided. |
-| Security CI | ✅ In place | Semgrep high-severity scan, obvious-secret pattern check and production dependency audit run in GitHub Actions. Latest corrected workflow completed successfully before this status update, except where a newer commit is still running. |
-| Independent PR AI reviewer | ⚠️ Config-ready / external connection | `.coderabbit.yaml` is committed. CodeRabbit GitHub App (or one equivalent reviewer) still needs to be connected to make reviews active. Do not add a second overlapping reviewer until this one is measured. |
-| Sentry / runtime observability | ⚠️ Scaffold-ready / external activation | Privacy-safe browser scaffold and activation guide are committed. A real Sentry project/DSN + official SDK/loader must still be connected and a synthetic event verified. |
-| Daily Improvement Agent | ✅ In place | Scheduled GitHub Action runs daily, produces an artifact/step summary, and updates one aggregate GitHub issue: https://github.com/dn-lx/frankiflow-mail/issues/4 |
-| Planner → Executor → Reviewer routing | ✅ In place | Capability-based orchestration is documented in `docs/AGENT-ORCHESTRATION.md`. Sensitive changes require independent review. |
-| MemPalace | ⏸️ Later | Intentionally not adopted; GitHub, Agent Skills, ADRs and current source remain authoritative. |
+| GitHub source of truth | ✅ Active | `develop` is integration; `main` is production. Only `develop` may merge to `main`. |
+| Agent Skills | ✅ Active | Project skill, release workflow, quality gates, branding, Context7, Frontend Design and Graphify policies are repository-local. |
+| Context7 | ✅ Active | Used for current third-party SDK/API documentation. |
+| Graphify | ✅ Active on demand | Local code-relationship map for cross-file impact analysis. Generated graphs remain non-authoritative. |
+| Frontend Design | ✅ Active on demand | Used for substantial UI/design changes. |
+| Playwright | ✅ Active | Chromium + WebKit on ordinary web PRs; iPhone/iPad-sized WebKit on production release gates. |
+| GitHub Actions | ✅ Active | CI, security, browser tests, documentation drift, daily engineering improvement and release gates. |
+| Security CI | ✅ Active | Semgrep, obvious-secret scan and production dependency audit. |
+| CodeRabbit | ✅ Active | Auto-review configured for PRs targeting `develop`, with incremental review enabled. |
+| Codex Security | ✅ Connected | Targeted deep review for auth, RLS, tenant isolation, payments, email, storage and other sensitive changes. |
+| PostHog | ✅ Connected | Available for analytics, feature flags and production diagnostics. App instrumentation remains opt-in and privacy-scoped. |
+| Supabase tooling | ✅ Active where used | Database, Auth, RLS, migrations, Edge Functions and security advisors. |
+| Netlify tooling | ✅ Active where used | Deployment state and hosting configuration. |
+| Stripe tooling | ✅ Active where used | Payment implementation/account-aware work. |
+| Resend tooling | ✅ Active where used | Transactional email and mail operations. |
+| Google Drive | ✅ Active | Documentation and approved asset handoff. |
+| Daily Engineering Improvement | ✅ Active | Scheduled engineering report workflow remains in place. |
 
-## External activation checklist
+## Removed / retired
 
-1. Connect **CodeRabbit** (or one equivalent independent PR reviewer) to this repository and verify one PR review.
-2. Create/select the **Sentry** project, connect the Browser SDK/Loader + DSN, keep PII disabled, and verify one synthetic non-sensitive event.
-3. Connect **Context7** in the coding-agent host.
-4. Run the **Headroom** pilot only on large repetitive context and compare quality/rework metrics before wider adoption.
+- **Sentry browser scaffold** — removed because it was never activated and duplicated the observability direction now covered by PostHog.
+- **Headroom pilot** — removed because it was not being used and added extra process without measurable value.
+- **One-time patch/apply workflows** — remove after their patch has landed; use normal PRs instead of self-modifying develop workflows.
+- **MemPalace** — not adopted. GitHub, current source, tests and repository skills remain authoritative.
 
-Do not mark an external integration as active merely because configuration exists in GitHub.
+## Operating rule
+
+Use [Engineering Integrations](ENGINEERING-INTEGRATIONS.md) for the complete simple-language inventory, and [Quality Gates](../.agents/skills/quality-gates/SKILL.md) for test/security routing.
+
+Do not mark a connector or integration as part of the production architecture merely because it is installed. It must have a defined purpose and, where relevant, verified project/account context.
