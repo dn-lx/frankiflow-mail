@@ -29,7 +29,6 @@ Use these repository-local skills when relevant:
 
 - [Context7 policy](.agents/skills/context7/SKILL.md) for current third-party API/SDK documentation.
 - [Frontend Design](.agents/skills/frontend-design/SKILL.md) for substantial UI/design work.
-- [Headroom pilot](.agents/skills/headroom-pilot/SKILL.md) only when large repetitive context is a measurable bottleneck; do not use compressed context as the sole evidence for high-risk logic.
 
 The agentic stack status is tracked in [docs/AGENTIC-STACK-STATUS.md](docs/AGENTIC-STACK-STATUS.md). Current source, tests and accepted ADRs override agent memory, compressed context or stale graph output.
 
@@ -44,3 +43,7 @@ The production rule is strict: **only this repository's `develop` branch may mer
 ## Testing and security efficiency
 
 Before changing CI, adding tests, reviewing release readiness, or choosing test scope, read and follow [Quality Gates](.agents/skills/quality-gates/SKILL.md). Use fast cross-browser/security checks for ordinary PRs and reserve the heavier mobile/release matrix for `develop → main`.
+
+## Engineering integrations
+
+Use [Engineering Integrations](docs/ENGINEERING-INTEGRATIONS.md) as the current inventory for coding, testing, security, deployment and observability tools. Prefer active integrations listed there; do not reintroduce retired scaffolds without a concrete requirement.
