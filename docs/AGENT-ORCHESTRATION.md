@@ -39,8 +39,9 @@ Use a faster/lower-cost model for deterministic mechanical tasks: inventories, r
 - Graphify: dependency/call-path discovery.
 - Context7: current third-party documentation.
 - Frontend Design: substantial UI/design work.
-- Headroom: optional large-context compression pilot only.
 - Tests/security checks: authoritative evidence.
+- **Codex Security**: targeted independent security review for auth, RLS, tenant isolation, payments, email, storage and other sensitive boundaries.
+- **PostHog**: production diagnostics, analytics and controlled feature rollout; never a source of truth for auth, pricing, payments or bookings.
 - ADRs: durable architecture decisions.
 
 Each stage passes artifacts through GitHub, not only chat context.
