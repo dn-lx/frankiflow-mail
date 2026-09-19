@@ -3,25 +3,39 @@ name: Guard production main
 on:
   pull_request:
     branches: [main]
-    types: [opened, reopened, synchronize, labeled]
+    types: [opened, reopened, synchronize, labeled, unlabeled, ready_for_review]
 
 permissions:
+  contents: read
   pull-requests: write
 
 jobs:
-  require-production-approval:
+  require-develop-release:
     runs-on: ubuntu-latest
     steps:
-      - name: Require production-approved label
+      - name: Require develop as the only source branch for main
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if jq -e '.pull_request.labels[]? | select(.name == "production-approved")' "$GITHUB_EVENT_PATH" >/dev/null; then
-            echo "Production approval label present. PR may remain open."
-            exit 0
+
+          HEAD_REF="$(jq -r '.pull_request.head.ref' "$GITHUB_EVENT_PATH")"
+          HEAD_REPO="$(jq -r '.pull_request.head.repo.full_name' "$GITHUB_EVENT_PATH")"
+
+          if [[ "$HEAD_REF" != "develop" || "$HEAD_REPO" != "$REPO" ]]; then
+            echo "Only develop from this repository may merge into main."
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "Production policy: only the repository's `develop` branch may merge into `main`. This PR has been closed because its source branch is `$HEAD_REF`."
+            gh pr close "$PR_NUMBER" --repo "$REPO"
+            exit 1
           fi
-          echo "No production-approved label. Closing PR to main."
-          gh pr close "$PR_NUMBER" --repo "$REPO"
+
+          if ! jq -e '.pull_request.labels[]? | select(.name == "production-approved")' "$GITHUB_EVENT_PATH" >/dev/null; then
+            echo "develop -> main requires production-approved."
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "Production policy: `develop` → `main` also requires the `production-approved` label."
+            gh pr close "$PR_NUMBER" --repo "$REPO"
+            exit 1
+          fi
+
+          echo "Valid production release PR: develop -> main with production-approved."
