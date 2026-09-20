@@ -47,3 +47,11 @@ The production rule is strict: **only this repository's `develop` branch may mer
 ## Testing and security efficiency
 
 Before changing CI, adding tests, reviewing release readiness, or choosing test scope, read and follow [Quality Gates](.agents/skills/quality-gates/SKILL.md). Use fast cross-browser/security checks for ordinary PRs and reserve the heavier mobile/release matrix for `develop → main`.
+
+## Universal agent continuity
+
+At the start of a new coding-agent session, read [Project Memory](docs/PROJECT-MEMORY.md) and [Current Handoff](docs/CURRENT-HANDOFF.md) after this file. Read [Agent Platform Workflows](docs/AGENT-PLATFORM-WORKFLOWS.md) for ChatGPT/Codex, Claude Code, Gemini CLI, GitHub Copilot, Cursor, Cline, Roo Code, Windsurf/Devin Desktop and OpenCode. Read [MCP and Connector Setup](docs/MCP-SETUP.md) before using external systems.
+
+`AGENTS.md` remains the canonical shared instruction source. Platform adapter files such as `CLAUDE.md`, `GEMINI.md` and `.github/copilot-instructions.md` must stay thin and must not redefine product or release rules.
+
+Before ending unfinished work, or after a material decision/external side effect, update `docs/CURRENT-HANDOFF.md` so the next agent can continue without relying on private chat/session memory.
