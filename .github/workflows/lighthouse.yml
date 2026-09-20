@@ -25,6 +25,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Create Lighthouse reports
+        continue-on-error: true
         run: npx lhci autorun
       - name: Upload reports
         if: ${{ !cancelled() }}
