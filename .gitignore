@@ -3,3 +3,10 @@
 .venv-graphify/
 .graphify/
 graphify-out/
+
+node_modules/
+.npm-cache/
+playwright-report/
+test-results/
+lighthouse-report/
+.lighthouseci/

@@ -39,20 +39,38 @@ jobs:
           --exclude coverage
           .
 
-  obvious-secrets:
+  gitleaks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - name: Reject common committed secret formats
+        with:
+          fetch-depth: 0
+      - name: Scan changed commits for secrets
+        if: ${{ github.event_name != 'schedule' }}
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          pattern='(sk_live_[A-Za-z0-9]+|sk_test_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----)'
-          if grep -RInE "$pattern" .             --exclude-dir=.git             --exclude-dir=node_modules             --exclude-dir=.graphify             --exclude-dir=dist             --exclude-dir=coverage; then
-            echo "Potential committed secret detected."
-            exit 1
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            RANGE="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [[ "$EVENT_NAME" == "push" && -n "${PUSH_BEFORE:-}" && "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]]; then
+            RANGE="${PUSH_BEFORE}..${CURRENT_SHA}"
+          else
+            RANGE="${CURRENT_SHA}^..${CURRENT_SHA}"
           fi
-          echo "No obvious secret pattern found."
+          echo "Scanning commit range: $RANGE"
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 git /repo --redact --no-banner --log-opts="$RANGE"
+      - name: Audit full repository history
+        if: ${{ github.event_name == 'schedule' }}
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 git /repo --redact --no-banner
 
   runtime-dependencies:
     runs-on: ubuntu-latest
