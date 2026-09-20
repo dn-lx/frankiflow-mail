@@ -46,9 +46,32 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Scan repository history for secrets
+      - name: Scan changed commits for secrets
+        if: ${{ github.event_name != 'schedule' }}
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            RANGE="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [[ "$EVENT_NAME" == "push" && -n "${PUSH_BEFORE:-}" && "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]]; then
+            RANGE="${PUSH_BEFORE}..${CURRENT_SHA}"
+          else
+            RANGE="${CURRENT_SHA}^..${CURRENT_SHA}"
+          fi
+          echo "Scanning commit range: $RANGE"
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 git /repo --redact --no-banner --log-opts="$RANGE"
+      - name: Audit full repository history
+        if: ${{ github.event_name == 'schedule' }}
+        continue-on-error: true
         run: |
           docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 git /repo --redact --no-banner
+
   runtime-dependencies:
     runs-on: ubuntu-latest
     timeout-minutes: 10
