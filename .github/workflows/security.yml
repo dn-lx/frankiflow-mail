@@ -39,21 +39,16 @@ jobs:
           --exclude coverage
           .
 
-  obvious-secrets:
+  gitleaks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - name: Reject common committed secret formats
-        shell: bash
+        with:
+          fetch-depth: 0
+      - name: Scan repository history for secrets
         run: |
-          set -euo pipefail
-          pattern='(sk_live_[A-Za-z0-9]+|sk_test_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----)'
-          if grep -RInE "$pattern" .             --exclude-dir=.git             --exclude-dir=node_modules             --exclude-dir=.graphify             --exclude-dir=dist             --exclude-dir=coverage; then
-            echo "Potential committed secret detected."
-            exit 1
-          fi
-          echo "No obvious secret pattern found."
-
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 git /repo --redact --no-banner
   runtime-dependencies:
     runs-on: ubuntu-latest
     timeout-minutes: 10

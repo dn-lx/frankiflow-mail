@@ -8,6 +8,8 @@
     "test:e2e:release": "playwright test --project=chromium --project=webkit --project=iphone-webkit --project=ipad-webkit"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@lhci/cli": "0.15.1",
     "@playwright/test": "1.63.0"
   }
 }

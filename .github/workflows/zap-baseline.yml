@@ -1,0 +1,30 @@
+name: Optional ZAP baseline
+
+on:
+  schedule:
+    - cron: "41 4 * * 3"
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: Preview URL to scan
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  baseline:
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.ZAP_TARGET_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run passive baseline scan
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: ${{ inputs.target_url || vars.ZAP_TARGET_URL }}
+          fail_action: false
+          allow_issue_writing: true
+          issue_title: ZAP baseline findings
