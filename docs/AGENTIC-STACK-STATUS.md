@@ -27,3 +27,14 @@ Verified against the `develop` branch on 2026-09-18.
 4. Run the **Headroom** pilot only on large repetitive context and compare quality/rework metrics before wider adoption.
 
 Do not mark an external integration as active merely because configuration exists in GitHub.
+
+## Universal agent portability — 2026-09-20
+
+- ✅ `AGENTS.md` remains the canonical cross-agent working agreement.
+- ✅ Durable project memory is stored in `docs/PROJECT-MEMORY.md`.
+- ✅ Cross-session/task continuation uses `docs/CURRENT-HANDOFF.md` instead of private chat memory.
+- ✅ External capability requirements and secret-handling rules are documented in `docs/MCP-SETUP.md`.
+- ✅ Agent-specific startup workflows are documented for ChatGPT/Codex, Claude Code, Gemini CLI, GitHub Copilot, Cursor, Cline, Roo Code, Windsurf/Devin Desktop and OpenCode.
+- ✅ Native bootstrap files are present for Claude Code (`CLAUDE.md`), Gemini CLI (`GEMINI.md`) and GitHub Copilot (`.github/copilot-instructions.md`).
+
+External MCP/plugin availability remains agent-host/account specific and must be verified with a harmless read before it is described as active.
