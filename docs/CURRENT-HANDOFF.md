@@ -53,3 +53,8 @@ Older inbound messages that were previously ignored are not all automatically ba
 3. Treat the deployed `receive-mail` version 21 behavior above as the current backend routing baseline.
 4. If changing inbound routing again, preserve Resend signature verification, idempotency, mailbox authorization boundaries, attachment safety limits and exact-alias routing.
 5. Keep production changes on the required `develop -> main` release path.
+
+
+## Agent Project Starter alignment — 2026-09-22
+
+Agent infrastructure was aligned with `dn-lx/agent-project-starter` without changing FrankiFlow Mail runtime behavior. Added model-routing and memory/context policy, MCP and memory-context skills, bootstrap guidance, agent-stack validation, stronger PR evidence, reusable templates and an agent-independent engineering ADR. Existing mailbox/email-safety rules and stronger CI/security/release checks were preserved. `main` is not part of this change.
