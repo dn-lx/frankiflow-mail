@@ -49,3 +49,22 @@ Before claiming an MCP/connector works:
 4. only then perform an authorized write.
 
 Configuration present in the repository is not evidence that an external integration is active.
+
+
+## Project capability profile
+
+| Capability | Status | Project provider / environment | Safe verification |
+| --- | --- | --- | --- |
+| Source control / PRs / CI | Required | GitHub · `dn-lx/frankiflow-mail` | Read `develop`, open PRs and latest checks |
+| Current library/API docs | Recommended | Context7 / official docs | Resolve/query a public library or API |
+| Database/auth/storage | Required | Shared Supabase FrankiFlow mail backend | Read schema/function metadata before writes |
+| Hosting/deployments | Required | Netlify FrankiFlow Mail site | Read site/deploy metadata |
+| Browser verification | Recommended for UI changes | Playwright / develop preview | Run repository smoke checks |
+| Code relationships | Recommended | Graphify local | Query mail modules and confirm in source |
+| Runtime observability | Optional / activation-dependent | Sentry scaffold | Read project/config metadata |
+| Product analytics/flags | Optional / task-dependent | PostHog when connected | Read project/flag metadata |
+| Payments | Not used | — | Do not connect Stripe for ordinary mail work |
+| Transactional/inbound email | Required | Resend + Supabase Edge Functions | Read webhook/delivery/received-mail metadata |
+| Business/project documents | Optional | Google Drive when connected | List/read a known project document |
+
+Mailbox and message data are sensitive. A local/develop frontend still points to shared services unless explicitly isolated.
