@@ -38,3 +38,15 @@ Do not mark an external integration as active merely because configuration exist
 - ✅ Native bootstrap files are present for Claude Code (`CLAUDE.md`), Gemini CLI (`GEMINI.md`) and GitHub Copilot (`.github/copilot-instructions.md`).
 
 External MCP/plugin availability remains agent-host/account specific and must be verified with a harmless read before it is described as active.
+
+
+## Agent Project Starter parity — 2026-09-22
+
+- ✅ Capability-based model routing is documented in `docs/MODEL-ROUTING-POLICY.md`.
+- ✅ Durable/working/episodic memory boundaries and targeted context retrieval are documented in `docs/MEMORY-CONTEXT-POLICY.md`.
+- ✅ MCP usage and memory/context each have a dedicated repository Agent Skill.
+- ✅ Agent-stack self-validation is enforced by `scripts/validate-agent-stack.mjs` and `.github/workflows/agent-stack-validation.yml`.
+- ✅ PRs capture verification, email/security review, external writes, risk and rollback.
+- ✅ Reusable ADR/MCP/project-skill templates and a new-project bootstrap checklist are committed.
+- ✅ Agent-independent engineering is an accepted ADR.
+- ✅ Existing FrankiFlow Mail email-safety, browser, security, release and mailbox-specific checks remain authoritative where stronger than the generic starter.
