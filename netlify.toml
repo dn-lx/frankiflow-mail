@@ -1,11 +1,5 @@
 [build]
-  publish = "."
+  command = "npm run build"
 
-[context.develop]
-  publish = "."
-
-[context.branch-deploy]
-  publish = "."
-
-[context.deploy-preview]
-  publish = "."
+[build.environment]
+  NODE_VERSION = "22"

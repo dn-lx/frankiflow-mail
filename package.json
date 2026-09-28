@@ -1,15 +1,26 @@
 {
-  "name": "frankiflow-mail-static",
+  "name": "frankiflow-mail",
+  "version": "2.0.0",
   "private": true,
-  "version": "0.1.0",
-  "type": "module",
   "scripts": {
-    "test:e2e": "playwright test --project=chromium --project=webkit",
-    "test:e2e:release": "playwright test --project=chromium --project=webkit --project=iphone-webkit --project=ipad-webkit"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "lucide-react": "^0.468.0",
+    "next": "^16.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.13.0",
-    "@lhci/cli": "0.15.1",
-    "@playwright/test": "1.63.0"
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "^16.0.0",
+    "typescript": "^5.7.2"
   }
 }
