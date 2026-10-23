@@ -35,7 +35,10 @@ export function RichEditor({ text, html, onChange, disabled = false, label = "Me
     <input ref={image} type={rich ? "file" : "hidden"} accept="image/png,image/jpeg,image/gif,image/webp" className="visually-hidden" aria-label="Inline image file" onChange={async event => {
       const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
       if (file.size > 512 * 1024) { window.alert("Inline images must be 512 KB or smaller. Attach larger images as files."); return; }
-      const bytes = new Uint8Array(await file.arrayBuffer()); let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte);
+      const destination = editor.current;
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (!destination?.isConnected || editor.current !== destination) return;
+      let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte);
       command("insertHTML", `<img src="data:${file.type};base64,${btoa(binary)}" alt="${file.name.replace(/["<>]/g, "")}" style="max-width:100%">`);
     }} />
   </div>;

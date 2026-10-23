@@ -137,6 +137,16 @@ try {
     const buttons=page.getByRole("button",{name:/^Download same-name\.bin/});assert.equal(await buttons.count(),2);
     for(let index=0;index<2;index++){const waiting=page.waitForEvent("download");await buttons.nth(index).click();assert.deepEqual(await readFile(await(await waiting).path()),contents[index]);}
   });
+  await check("an image finishing after a draft closes cannot alter another draft", async page => {
+    await page.evaluate(()=>{const original=File.prototype.arrayBuffer;File.prototype.arrayBuffer=function(){return new Promise(resolve=>{window.releaseInlineRead=()=>original.call(this).then(resolve);});};});
+    await page.getByRole("button",{name:"New message",exact:false}).click();await page.getByRole("button",{name:"Rich text",exact:true}).click();
+    await page.getByLabel("Inline image file",{exact:true}).setInputFiles({name:"private-old.png",mimeType:"image/png",buffer:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aBr8AAAAASUVORK5CYII=","base64")});
+    await page.getByRole("button",{name:"Discard message",exact:true}).click();await page.getByRole("dialog").waitFor({state:"detached"});
+    await page.getByRole("button",{name:"New message",exact:false}).click();await page.getByRole("button",{name:"Rich text",exact:true}).click();
+    const editor=page.getByRole("textbox",{name:"Rich message body",exact:true});await editor.fill("Keep this new draft unchanged");
+    await page.evaluate(async()=>{await window.releaseInlineRead();await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+    assert.equal(await editor.locator("img").count(),0);assert.equal(await editor.innerText(),"Keep this new draft unchanged");
+  });
   await check("one thousand messages support search, bulk archive and Undo", async page => {
     await page.locator(".message-row").nth(999).waitFor({timeout:15000});
     assert.equal(await page.locator(".message-row").count(),1000);
@@ -167,4 +177,4 @@ try {
   });
 } finally { await browser.close(); }
 assert.equal(failures.length, 0, `${failures.length} edge-case groups failed; see test-results/edge-cases/`);
-console.log("17 edge-case groups passed");
+console.log("18 edge-case groups passed");
