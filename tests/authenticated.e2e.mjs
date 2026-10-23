@@ -59,7 +59,8 @@ let sentPayload,
   failSend = true,
   failSign = true,
   attachmentReads = 0,
-  failIndex = false;
+  failIndex = false,
+  serverWarning = "";
 const user = {
   id: "33333333-3333-4333-8333-333333333333",
   email: account.address,
@@ -135,7 +136,7 @@ await page.route("https://*.supabase.co/**", async (route) => {
     sentPayload = req.postDataJSON();
     if (failSend)
       return fulfill({ error: "Transport is temporarily unavailable" }, 503);
-    return fulfill({ message_id: mail.id });
+    return fulfill({ message_id: mail.id, warning: serverWarning });
   }
   return fulfill({});
 });
@@ -371,6 +372,15 @@ try {
   await search.fill("has:attachment");
   await page.locator(".row-content").filter({ hasText: mail.subject }).waitFor();
   console.log("PASS attachment index failure leaves mailbox and reader usable; refresh restores attachment search");
+  serverWarning = "Email accepted by the provider, but its Sent status could not be updated. Its files are saved in Drafts. Do not resend the email.";
+  failCleanup = false;
+  await page.getByRole("button", { name: "New message", exact: false }).click();
+  await page.getByRole("textbox", { name: "To", exact: true }).fill("recipient@example.com");
+  await page.getByRole("textbox", { name: "Message body" }).fill("Preserve the server delivery warning");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  await page.getByRole("alert").filter({ hasText: serverWarning }).waitFor();
+  console.log("PASS backend post-delivery warnings remain visible after refresh without encouraging another send");
 } finally {
   await browser.close();
 }

@@ -820,6 +820,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         );
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
+        deliveryWarning = typeof data?.warning === "string" ? data.warning : "";
         // A successful delivery must never be reported as failed by later refresh/draft cleanup.
         if (composer.id) {
           const cleanup = await getSupabase()
@@ -828,8 +829,8 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
             .eq("id", composer.id)
             .eq("folder", "drafts");
           if (cleanup.error)
-            deliveryWarning =
-              "Email sent, but the old draft could not be removed. Refresh before sending again.";
+            deliveryWarning = [deliveryWarning,
+              "Email sent, but the old draft could not be removed. Refresh before sending again."].filter(Boolean).join(" ");
         }
         attachmentCache.current.clear();
         await load();
@@ -837,8 +838,8 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         setActive(null);
       }
       await recovery.clear().catch(() => {
-        deliveryWarning =
-          "Email sent, but the device recovery copy could not be removed. Discard it if it reappears.";
+        deliveryWarning = [deliveryWarning,
+          "Email sent, but the device recovery copy could not be removed. Discard it if it reappears."].filter(Boolean).join(" ");
       });
       if (deliveryWarning) setError(deliveryWarning);
       setComposer(null);
