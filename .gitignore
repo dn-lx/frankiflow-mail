@@ -5,3 +5,4 @@ out/
 !.env.example
 *.tsbuildinfo
 test-results/
+next-env.d.ts
