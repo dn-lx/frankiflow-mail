@@ -31,6 +31,7 @@
   const sent = {
     ...common,
     id: "sent",
+    provider_message_id: "provider-sent",
     from_name: "FrankiFlow",
     from_address: account.address,
     to_addresses: ["client@example.com"],
@@ -231,6 +232,13 @@
     },
     functions: {
       async invoke(_name, { body }) {
+        if (body.action === "repair-attachments") {
+          test.events.push("recover");
+          if (test.failRecovery) return { data: null, error: { message: "Provider recovery unavailable" } };
+          test.tables.frankiflow_mail_attachments.push({ id: "recovered-file", message_id: body.message_id,
+            filename: "sent-receipt.txt", content_type: "text/plain", size_bytes: 17, storage_path: "sent/receipt.txt" });
+          return { data: { ok: true, recovered: 1 }, error: null };
+        }
         test.payloads.push(body);
         test.events.push("send");
         if (test.failSend)

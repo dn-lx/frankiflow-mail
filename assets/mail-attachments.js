@@ -46,14 +46,34 @@ export async function renderMailAttachments(container, message, client) {
   block.append(title);
   container.append(block);
   const current = () => container.isConnected && jobs.get(container) === job;
-  const retry = (text) => {
+  const retry = (text, recover = false) => {
     title.textContent = text;
     const control = document.createElement("button");
     control.type = "button";
     control.className = "btn";
-    control.textContent = "Retry attachments";
-    control.onclick = () => {
-      void renderMailAttachments(container, message, client);
+    control.textContent = recover ? "Recover sent attachments" : "Retry attachments";
+    control.onclick = async () => {
+      if (recover) {
+        control.disabled = true;
+        title.textContent = "Recovering original files from the mail provider…";
+        try {
+          const { data, error } = await client.functions.invoke("send-mail", {
+            body: { action: "repair-attachments", message_id: message.id },
+          });
+          if (error) {
+            const details = await error.context?.json?.().catch(() => null);
+            throw new Error(details?.error || error.message);
+          }
+          if (data?.error) throw new Error(data.error);
+        } catch (error) {
+          if (current()) {
+            title.textContent = `${error.message || "Recovery failed."} Your email will not be resent.`;
+            control.disabled = false;
+          }
+          return;
+        }
+      }
+      if (current()) void renderMailAttachments(container, message, client);
     };
     block.append(control);
   };
@@ -70,8 +90,10 @@ export async function renderMailAttachments(container, message, client) {
     if (!attachments.length) {
       if (message.has_attachments) {
         block.setAttribute("role", "status");
+        block.classList.add("ff-attachment-missing");
         retry(
-          "This message indicates attachments, but no saved files were returned. Retry or contact your mail administrator.",
+          "This message indicates attachments, but no saved files were returned.",
+          message.direction === "outbound" && Boolean(message.resend_email_id || message.provider_message_id),
         );
       } else block.remove();
       return;

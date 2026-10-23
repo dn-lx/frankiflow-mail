@@ -450,7 +450,8 @@ async function sendDialogReply({ message, accounts, mode, editor, files, status,
     const response = await fetch(CONFIG.sendFunctionUrl, { method:'POST', headers:{ 'Content-Type':'application/json', apikey:CONFIG.supabasePublishableKey, Authorization:`Bearer ${currentSession.access_token}` }, body:JSON.stringify(payload) });
     const result = await response.json().catch(() => ({}));
     if (!response.ok || result?.error) throw new Error(result?.error || `Send failed (HTTP ${response.status})`);
-    editor.innerHTML = ''; status.className = 'ff-status ok'; status.textContent = scheduledAt ? 'Reply scheduled.' : (mode === 'replyAll' ? 'Reply all sent.' : 'Reply sent.');
+    editor.innerHTML = ''; status.className = 'ff-status ok'; status.textContent = result.warning || (scheduledAt ? 'Reply scheduled.' : (mode === 'replyAll' ? 'Reply all sent.' : 'Reply sent.'));
+    if(result.warning)status.className = 'ff-status error';
     qs('#refreshBtn')?.click();
     return true;
   } finally {
