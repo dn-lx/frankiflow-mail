@@ -34,7 +34,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { supabase, attachmentBucket } from "@/lib/supabase";
+import { getSupabase, attachmentBucket } from "@/lib/supabase";
 import { demoAccounts, demoMessages } from "@/lib/demo";
 import {
   filterMessages,
@@ -120,12 +120,12 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     setError("");
     try {
       const [mail, senders] = await Promise.all([
-        supabase
+        getSupabase()
           .from("frankiflow_mail_messages")
           .select("*")
           .order("created_at", { ascending: false })
           .limit(1000),
-        supabase
+        getSupabase()
           .from("frankiflow_mail_accounts")
           .select("*")
           .order("is_primary", { ascending: false }),
@@ -168,7 +168,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     // Supabase callbacks must stay synchronous; fetch outside its auth lock.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
+    } = getSupabase().auth.onAuthStateChange((_event, s) => {
       if (sessionUser.current !== (s?.user.id || null)) {
         sessionUser.current = s?.user.id || null;
         loadGeneration.current++;
@@ -184,11 +184,13 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       setSession(s);
       setReady(true);
     });
-    supabase.auth.getSession().then(({ data, error }) => {
-      setSession(data.session);
-      if (error) setError(error.message);
-      setReady(true);
-    });
+    getSupabase()
+      .auth.getSession()
+      .then(({ data, error }) => {
+        setSession(data.session);
+        if (error) setError(error.message);
+        setReady(true);
+      });
     return () => subscription.unsubscribe();
   }, [demo]);
 
@@ -255,7 +257,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   }, [session, demo, load]);
   useEffect(() => {
     if (!session || demo) return;
-    const channel = supabase
+    const channel = getSupabase()
       .channel("v2-mail")
       .on(
         "postgres_changes",
@@ -267,7 +269,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       )
       .subscribe();
     return () => {
-      void supabase.removeChannel(channel);
+      void getSupabase().removeChannel(channel);
     };
   }, [session, demo, load]);
   useEffect(() => {
@@ -348,7 +350,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     setError("");
     try {
       if (!demo) {
-        const { error } = await supabase
+        const { error } = await getSupabase()
           .from("frankiflow_mail_messages")
           .update({
             ...updates,
@@ -451,11 +453,11 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         ]);
       } else {
         const result = data.id
-          ? await supabase
+          ? await getSupabase()
               .from("frankiflow_mail_messages")
               .update(row)
               .eq("id", data.id)
-          : await supabase.from("frankiflow_mail_messages").insert(row);
+          : await getSupabase().from("frankiflow_mail_messages").insert(row);
         if (result.error) throw result.error;
         await load();
       }
@@ -533,21 +535,24 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         setActive(sent.id);
         setQuery("");
       } else {
-        const { data, error } = await supabase.functions.invoke("send-mail", {
-          body: {
-            ...composer,
-            to: recipients(composer.to),
-            cc: recipients(composer.cc),
-            bcc: recipients(composer.bcc),
-            attachments,
-            draft_id: composer.id || null,
+        const { data, error } = await getSupabase().functions.invoke(
+          "send-mail",
+          {
+            body: {
+              ...composer,
+              to: recipients(composer.to),
+              cc: recipients(composer.cc),
+              bcc: recipients(composer.bcc),
+              attachments,
+              draft_id: composer.id || null,
+            },
           },
-        });
+        );
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
         // A successful delivery must never be reported as failed by later refresh/draft cleanup.
         if (composer.id) {
-          const cleanup = await supabase
+          const cleanup = await getSupabase()
             .from("frankiflow_mail_messages")
             .delete()
             .eq("id", composer.id)
@@ -1490,7 +1495,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
               <button
                 className="secondary-button"
                 onClick={async () => {
-                  const { error } = await supabase.auth.signOut();
+                  const { error } = await getSupabase().auth.signOut();
                   if (error) setError(error.message);
                   else {
                     setMessages([]);
@@ -1560,7 +1565,7 @@ function Login({
             onError("");
             const data = new FormData(e.currentTarget);
             try {
-              const { error } = await supabase.auth.signInWithPassword({
+              const { error } = await getSupabase().auth.signInWithPassword({
                 email: String(data.get("email")).trim(),
                 password: String(data.get("password")),
               });
@@ -1677,7 +1682,7 @@ function Attachments({
     }
     setBusy(true);
     setError("");
-    supabase
+    getSupabase()
       .from("frankiflow_mail_attachments")
       .select("id,filename,content_type,size_bytes,storage_path")
       .eq("message_id", message.id)
@@ -1702,8 +1707,8 @@ function Attachments({
       if (!demo) {
         if (!item.storage_path)
           throw new Error("The attachment storage path is missing.");
-        const { data, error } = await supabase.storage
-          .from(attachmentBucket)
+        const { data, error } = await getSupabase()
+          .storage.from(attachmentBucket)
           .createSignedUrl(item.storage_path, 60, { download: item.filename });
         if (error) throw error;
         url = data.signedUrl;

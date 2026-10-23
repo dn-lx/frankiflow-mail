@@ -24,6 +24,21 @@ const pass = (text) => {
   console.log(`PASS ${text}`);
 };
 try {
+  // An expired sample auth session must not trigger token refresh on /demo.
+  await page.addInitScript(() => {
+    if (location.pathname !== "/demo") return;
+    localStorage.setItem(
+      "sb-bdeajozhylypiidrldka-auth-token",
+      JSON.stringify({
+        access_token: "expired-test-token",
+        refresh_token: "test-refresh",
+        expires_at: 1,
+        expires_in: 3600,
+        token_type: "bearer",
+        user: { id: "test-user" },
+      }),
+    );
+  });
   await page.goto(`${base}/demo`);
   await page.getByRole("heading", { name: "Inbox", exact: false }).waitFor();
   await page
@@ -51,13 +66,11 @@ try {
   await page
     .getByRole("textbox", { name: "Message body" })
     .fill("An attached document should remain available after sending.");
-  await page
-    .locator("input[type=file]")
-    .setInputFiles({
-      name: "résumé.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from("Attachment payload: Grüße 👋"),
-    });
+  await page.locator("input[type=file]").setInputFiles({
+    name: "résumé.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Attachment payload: Grüße 👋"),
+  });
   await page.getByRole("button", { name: "Send in demo" }).click();
   const attachment = page.getByRole("button", { name: "Download résumé.txt" });
   await attachment.waitFor();
@@ -164,6 +177,9 @@ try {
   );
   assert.deepEqual(externalRequests, []);
   pass("demo never requests live Supabase data");
+  await page.evaluate(() =>
+    localStorage.removeItem("sb-bdeajozhylypiidrldka-auth-token"),
+  );
   await page.goto(base);
   await page.getByRole("heading", { name: "Welcome back." }).waitFor();
   assert.equal(await page.locator(".message-row").count(), 0);
