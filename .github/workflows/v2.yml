@@ -1,0 +1,57 @@
+name: Mail v2 checks
+on:
+  push:
+    branches: [v2]
+  pull_request:
+    branches: [v2]
+  workflow_dispatch:
+    inputs:
+      deployment_url:
+        description: "Optional Netlify v2 branch URL to test after deployment"
+        required: false
+        type: string
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+      - run: npm run typecheck
+      - run: npx playwright install --with-deps chromium
+      - name: Set Chromium executable
+        run: node -e 'require("fs").appendFileSync(process.env.GITHUB_ENV, "CHROMIUM_PATH=" + require("playwright").chromium.executablePath() + "\n")'
+      - name: Browser regression tests
+        run: |
+          npm start > /tmp/mail-v2.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/ > /dev/null; then break; fi
+            sleep 1
+          done
+          npm run test:e2e
+          npm run test:contract
+      - name: Test deployed branch
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.deployment_url != '' }}
+        env:
+          BASE_URL: ${{ inputs.deployment_url }}
+        run: |
+          node -e 'const u=new URL(process.env.BASE_URL); if(u.protocol!=="https:" || u.hostname!=="v2--frankiflow-mail.netlify.app" || u.username || u.password) throw new Error("Expected the v2 Netlify HTTPS branch URL")'
+          npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v2-browser-results
+          path: test-results/
+          if-no-files-found: ignore

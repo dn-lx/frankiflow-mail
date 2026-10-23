@@ -1,11 +1,10 @@
 [build]
-  publish = "."
+  command = "npm run build"
+  publish = ".next"
 
-[context.develop]
-  publish = "."
+[build.environment]
+  NODE_VERSION = "24"
+  NEXT_TELEMETRY_DISABLED = "1"
 
-[context.branch-deploy]
-  publish = "."
-
-[context.deploy-preview]
-  publish = "."
+[context.v2]
+  command = "npm run build"

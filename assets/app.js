@@ -592,7 +592,7 @@ async function setupRealtime(){if(state.realtimeChannel||!state.session)return;s
 async function teardownRealtime(){if(state.realtimeChannel){await supabase.removeChannel(state.realtimeChannel);state.realtimeChannel=null;}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)updateDocumentTitle();});
 
-supabase.auth.onAuthStateChange(async(_event,session)=>{state.session=session;if(session){await loadAll();await refreshPushStatus();consumeMessageDeepLink();await setupRealtime();}else{await teardownRealtime();loginView();}});
+supabase.auth.onAuthStateChange((_event,session)=>{state.session=session;setTimeout(async()=>{if(state.session!==session)return;if(session){await loadAll();await refreshPushStatus();consumeMessageDeepLink();await setupRealtime();}else{await teardownRealtime();loginView();}},0);});
 const {data:{session}}=await supabase.auth.getSession();
 state.session=session;
 if(session){await loadAll();await refreshPushStatus();consumeMessageDeepLink();await setupRealtime();}else loginView();

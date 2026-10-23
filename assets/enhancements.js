@@ -8,7 +8,6 @@ const MEETING_TZ = 'Europe/Berlin';
 let deferredInstallPrompt = null;
 let lastVisibleRefresh = Date.now();
 let decorateScheduled = false;
-let readerEnhancementKey = '';
 let readerEnhancementBusy = false;
 let standaloneRenderedFor = '';
 
@@ -233,7 +232,17 @@ async function signedAttachmentUrls(attachment) {
 
 async function renderAttachments(container, messageId) {
   const { data, error } = await mailDb.from('frankiflow_mail_attachments').select('id,filename,content_type,size_bytes,storage_path').eq('message_id', messageId).order('created_at');
-  if (error || !data?.length) return;
+  if (error) {
+    const status = document.createElement('p');
+    status.className = 'ff-attachment-error';
+    status.setAttribute('role', 'alert');
+    status.textContent = 'Attachments could not be loaded. ';
+    const retry = document.createElement('button');
+    retry.textContent = 'Retry';
+    retry.onclick = () => { status.remove(); renderAttachments(container, messageId); };
+    status.appendChild(retry); container.appendChild(status); return;
+  }
+  if (!data?.length || !container.isConnected) return;
   const block = document.createElement('div');
   block.className = 'ff-attachment-block';
   block.innerHTML = `<div class="ff-attachment-title">${icon('attach_file')} ${data.length} attachment${data.length === 1 ? '' : 's'}</div><div class="ff-attachment-grid"></div>`;
@@ -245,6 +254,9 @@ async function renderAttachments(container, messageId) {
     card.className = 'ff-attachment-card';
     card.title = 'Double-click to open attachment';
     card.innerHTML = `<div class="ff-attachment-icon">${icon(attachmentIcon(attachment.content_type, attachment.filename))}</div><div class="ff-attachment-meta"><strong>${esc(attachment.filename || 'Attachment')}</strong><small>${esc(attachment.content_type || 'file')} · ${fmtBytes(attachment.size_bytes)}</small></div><div class="ff-attachment-actions"><button class="ff-mini-btn ff-preview" title="Open">${icon('open_in_new')}</button><button class="ff-mini-btn ff-download" title="Download">${icon('download')}</button></div>`;
+    if (!urls.view && !urls.download) qs('.ff-attachment-meta small', card).textContent = 'File unavailable. Refresh to retry.';
+    qs('.ff-preview', card).disabled = !urls.view;
+    qs('.ff-download', card).disabled = !urls.download;
     const open = () => urls.view && window.open(urls.view, '_blank', 'noopener,noreferrer');
     card.addEventListener('dblclick', open);
     qs('.ff-preview', card).addEventListener('click', e => { e.stopPropagation(); open(); });
@@ -287,40 +299,29 @@ function renderHtmlInto(container, html, fallbackText = '') {
 
 async function enhanceReader() {
   const panel = qs('#reader');
-  const active = qs('.mail-row.active');
-  if (!panel?.classList.contains('open') || !active?.dataset.id || readerEnhancementBusy) return;
-  const activeId = active.dataset.id;
-  const cards = qsa('.thread-card', panel);
-  const key = `${activeId}:${cards.length}`;
-  if (!cards.length || readerEnhancementKey === key) return;
+  if (!panel?.classList.contains('open') || readerEnhancementBusy) return;
+  // Readiness belongs to the current DOM, not a remembered message/card count.
+  const cards = qsa('.thread-card', panel).filter(card => qs('.thread-body', card)?.dataset.ffAttachments !== '1');
+  if (!cards.length) return;
   readerEnhancementBusy = true;
   try {
-    const { data: activeMessage, error } = await mailDb.from('frankiflow_mail_messages').select('id,thread_id,reply_to,from_address,subject').eq('id', activeId).maybeSingle();
-    if (error || !activeMessage) return;
-    let messages = [];
-    if (cards.length === 1) {
-      const { data } = await mailDb.from('frankiflow_mail_messages').select('*').eq('id', activeId).maybeSingle();
-      if (data) messages = [data];
-    } else if (activeMessage.thread_id) {
-      const { data } = await mailDb.from('frankiflow_mail_messages').select('*').eq('thread_id', activeMessage.thread_id).order('created_at', { ascending:true });
-      messages = data || [];
-    }
-    cards.forEach((card, index) => {
-      const message = messages[index];
-      if (!message) return;
-      card.dataset.messageId = message.id;
+    const ids = cards.map(card => card.dataset.messageId || qs('.thread-body', card)?.dataset.messageId).filter(Boolean);
+    const { data, error } = await mailDb.from('frankiflow_mail_messages').select('*').in('id', ids);
+    if (error) { console.warn('Could not load reader messages', error); return; }
+    const byId = new Map((data || []).map(message => [message.id, message]));
+    await Promise.all(cards.map(async card => {
+      if (!card.isConnected) return;
       const body = qs('.thread-body', card);
-      if (!body) return;
+      const message = byId.get(card.dataset.messageId || body?.dataset.messageId);
+      if (!body || !message) return;
       if (body.dataset.ffRich !== '1') {
         body.dataset.ffRich = '1';
         renderHtmlInto(body, message.html_body, message.text_body);
       }
-      if (body.dataset.ffAttachments !== '1') {
-        body.dataset.ffAttachments = '1';
-        renderAttachments(body, message.id);
-      }
-    });
-    readerEnhancementKey = key;
+      body.dataset.ffAttachments = 'loading';
+      await renderAttachments(body, message.id);
+      body.dataset.ffAttachments = '1';
+    }));
   } finally { readerEnhancementBusy = false; }
 }
 
@@ -756,7 +757,7 @@ document.addEventListener('visibilitychange', () => {
   lastVisibleRefresh = now;
 });
 
-mailDb.auth.onAuthStateChange((_event, currentSession) => { if (currentSession) { readerEnhancementKey=''; setTimeout(scheduleDecorate, 80); } });
+mailDb.auth.onAuthStateChange((_event, currentSession) => { if (currentSession) { setTimeout(scheduleDecorate, 80); } });
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -765,8 +766,6 @@ if ('serviceWorker' in navigator) {
 }
 
 const observer = new MutationObserver(() => {
-  const activeId = qs('.mail-row.active')?.dataset.id || '';
-  if (!activeId) readerEnhancementKey = '';
   scheduleDecorate();
 });
 observer.observe(document.body, { childList:true, subtree:true });
