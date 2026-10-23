@@ -11,3 +11,8 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+[[headers]]
+  for = "/sw-v2.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"

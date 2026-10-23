@@ -32,9 +32,15 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
       - run: npm run typecheck
-      - run: npx playwright install --with-deps chromium
-      - name: Set Chromium executable
-        run: node -e 'require("fs").appendFileSync(process.env.GITHUB_ENV, "CHROMIUM_PATH=" + require("playwright").chromium.executablePath() + "\n")'
+      - name: Select Chromium browser
+        shell: bash
+        run: |
+          mail_chromium_path="$(command -v google-chrome || command -v chromium || true)"
+          if [ -z "$mail_chromium_path" ]; then
+            npx playwright install --with-deps chromium
+            mail_chromium_path="$(node -e 'process.stdout.write(require("playwright").chromium.executablePath())')"
+          fi
+          printf 'CHROMIUM_PATH=%s\n' "$mail_chromium_path" >> "$GITHUB_ENV"
       - name: Browser regression tests
         run: |
           npm start > /tmp/mail-v2.log 2>&1 &
