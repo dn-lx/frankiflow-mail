@@ -206,6 +206,24 @@ try {
       .count(),
     0,
   );
+  await page.getByRole("button", { name: "Open settings", exact: true }).click();
+  const signature = "Alex Morgan\nProduct team · +49 123\n<literal text>";
+  await page.getByRole("textbox", { name: "Signature text", exact: true }).fill(signature);
+  await page.getByRole("button", { name: "Save signature", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "Signature saved on this device." }).waitFor();
+  await page.getByRole("button", { name: "Close settings", exact: true }).click();
+  await page.reload();
+  await page.getByRole("button", { name: "Open settings", exact: true }).click();
+  assert.equal(await page.getByRole("textbox", { name: "Signature text", exact: true }).inputValue(), signature);
+  await page.getByRole("button", { name: "Close settings", exact: true }).click();
+  await page.getByRole("button", { name: "New message", exact: false }).click();
+  const body = page.getByRole("textbox", { name: "Message body" });
+  await body.fill("Hello\n\nQuoted text");
+  await body.evaluate((field) => field.setSelectionRange(5, 5));
+  await page.getByRole("button", { name: "Insert signature", exact: true }).click();
+  assert.equal(await body.inputValue(), `Hello\n\n${signature}\n\nQuoted text`);
+  await page.getByRole("button", { name: "Discard message", exact: true }).click();
+  console.log("PASS signatures persist across reload and insert at the cursor without changing quoted text");
   assert.deepEqual(errors, []);
   console.log(
     "PASS reply-all excludes our own address; discarding removes the device recovery copy",
@@ -215,7 +233,7 @@ try {
     path: "test-results/improvements-desktop.png",
     fullPage: true,
   });
-  console.log("5 compose recovery and mailbox action checks passed");
+  console.log("6 compose recovery, signature and mailbox action checks passed");
 } finally {
   await browser.close();
 }

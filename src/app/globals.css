@@ -1978,3 +1978,17 @@ kbd {
     font-size: 11px;
   }
 }
+
+.signature-settings {
+  border-top: 1px solid var(--border);
+  padding: 18px 0;
+}
+.signature-settings strong { font-size: 12px; font-weight: 500; }
+.signature-settings p { font-size: 11px; color: var(--muted); line-height: 1.6; }
+.signature-settings label { display: grid; gap: 7px; margin: 14px 0; font-size: 11px; }
+.signature-settings select, .signature-settings textarea {
+  width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px; background: var(--surface); color: var(--text); font: inherit;
+}
+.signature-settings textarea { resize: vertical; line-height: 1.6; }
+.signature-settings [role=alert] { color: #b64545; }

@@ -38,6 +38,8 @@ import {
   X,
 } from "lucide-react";
 import { getSupabase, attachmentBucket } from "@/lib/supabase";
+import { SignatureSettings } from "@/components/signature-settings";
+import { useSignatures } from "@/hooks/use-signatures";
 import { useDraftRecovery } from "@/hooks/use-draft-recovery";
 import { attachmentFiles, encodeFiles, messageText } from "@/lib/attachments";
 import { demoAccounts, demoMessages } from "@/lib/demo";
@@ -111,6 +113,8 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     composer,
     files,
   );
+  const signatures = useSignatures(demo ? "demo" : session?.user.id || null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [dark, setDark] = useState(false);
   const [settings, setSettings] = useState(false);
   const [sidebar, setSidebar] = useState(false);
@@ -129,6 +133,8 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     unreadOnly,
   );
   const ownAddress = accounts[0]?.address || "";
+
+  const signature = signatures.values[composer?.fromAddress.toLowerCase() || ""] || "";
 
   const load = useCallback(async () => {
     if (demo) return;
@@ -158,6 +164,27 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           })),
         );
         setAccounts(senders.data || []);
+      }
+      // Metadata can be present even when the message's attachment flag is stale.
+      // Keep mailbox loading independent of this optional index request.
+      const ids = (mail.data || []).map((m) => m.id);
+      const attachmentIds = new Set<string>();
+      try {
+        await Promise.all(Array.from({ length: Math.ceil(ids.length / 100) }, async (_, batch) => {
+          const batchIds = ids.slice(batch * 100, (batch + 1) * 100);
+          for (let offset = 0; ; offset += 1000) {
+            const result = await getSupabase().from("frankiflow_mail_attachments")
+              .select("message_id").in("message_id", batchIds).range(offset, offset + 999);
+            if (result.error) throw result.error;
+            for (const item of result.data || []) attachmentIds.add(item.message_id);
+            if (!result.data || result.data.length < 1000) break;
+          }
+        }));
+        if (generation === loadGeneration.current) setMessages((previous) => previous.map((m) => ({
+          ...m, has_attachments: m.has_attachments || attachmentIds.has(m.id),
+        })));
+      } catch {
+        if (generation === loadGeneration.current) setError("Attachment search could not be refreshed. Open a message to load its files, or refresh to retry.");
       }
     } catch (e) {
       if (generation === loadGeneration.current) setError(errorText(e));
@@ -592,7 +619,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     setFiles(next);
   }
   async function saveDraft() {
-    if (!composer) return;
+    if (!composer || sendingLock.current) return;
     const data = composer;
     if (
       !data.to &&
@@ -606,6 +633,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       setComposer(null);
       return;
     }
+    sendingLock.current = true;
     if (files.length && !demo) {
       setSending(true);
       try {
@@ -620,6 +648,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           "The draft could not be saved. Keep the composer open to avoid losing its attachments.",
         );
       } finally {
+        sendingLock.current = false;
         setSending(false);
       }
       return;
@@ -683,6 +712,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     } catch (e) {
       setError(errorText(e));
     } finally {
+      sendingLock.current = false;
       setSending(false);
     }
   }
@@ -1651,6 +1681,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 </label>
               </div>
               <textarea
+                ref={bodyRef}
                 aria-label="Message body"
                 className="compose-body"
                 placeholder="A good conversation starts with a hello…"
@@ -1707,6 +1738,29 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 onClick={() => fileRef.current?.click()}
               >
                 <Paperclip size={19} />
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Insert signature"
+                title={signature ? "Insert signature" : "Add a signature in Settings"}
+                disabled={sending || !signature.trim()}
+                onClick={() => {
+                  const field = bodyRef.current;
+                  if (!field) return;
+                  const start = field.selectionStart;
+                  const end = field.selectionEnd;
+                  const before = composer.text.slice(0, start);
+                  const after = composer.text.slice(end);
+                  const insert = `${before && !before.endsWith("\n\n") ? "\n\n" : ""}${signature}${after && !after.startsWith("\n") ? "\n\n" : ""}`;
+                  setComposer({ ...composer, text: before + insert + after });
+                  requestAnimationFrame(() => {
+                    field.focus();
+                    field.setSelectionRange(start + insert.length, start + insert.length);
+                  });
+                }}
+              >
+                <PenLine size={18} />
               </button>
               <input
                 type="file"
@@ -1802,6 +1856,9 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
               </div>
               <ShieldCheck size={22} />
             </div>
+            {signatures.ready && accounts.length > 0 && (
+              <SignatureSettings key={demo ? "demo" : session?.user.id} accounts={accounts} {...signatures} />
+            )}
             {demo ? (
               <button
                 className="secondary-button"

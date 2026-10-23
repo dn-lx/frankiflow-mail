@@ -58,7 +58,8 @@ let includeDraft = false,
 let sentPayload,
   failSend = true,
   failSign = true,
-  attachmentReads = 0;
+  attachmentReads = 0,
+  failIndex = false;
 const user = {
   id: "33333333-3333-4333-8333-333333333333",
   email: account.address,
@@ -99,11 +100,14 @@ await page.route("https://*.supabase.co/**", async (route) => {
     return fulfill([account, shared]);
   if (url.pathname === "/rest/v1/frankiflow_mail_attachments") {
     attachmentReads++;
+    if (failIndex && url.searchParams.get("select") === "message_id")
+      return fulfill({ message: "Index unavailable" }, 503);
     if (url.searchParams.get("message_id") === `eq.${draft.id}`)
       return fulfill([]);
     return fulfill([
       {
         id: "file-1",
+        message_id: mail.id,
         filename: "contract.txt",
         content_type: "text/plain",
         size_bytes: 13,
@@ -149,6 +153,10 @@ try {
     .getByRole("navigation", { name: "Mail folders" })
     .getByRole("button", { name: /^Sent/ })
     .click();
+  const search = page.getByRole("textbox", { name: "Search mail" });
+  await search.fill("has:attachment");
+  await page.locator(".row-content").filter({ hasText: mail.subject }).waitFor();
+  await search.fill("");
   await page.locator(".row-content").filter({ hasText: mail.subject }).click();
   await page.getByRole("button", { name: "Download contract.txt" }).waitFor();
   assert.ok(attachmentReads >= 1);
@@ -169,7 +177,23 @@ try {
   console.log(
     "PASS storage errors are visible and attachments reload after reader remount",
   );
+  await page.getByRole("button", { name: "Open settings", exact: true }).click();
+  await page.getByRole("textbox", { name: "Signature text" }).fill("Alex signature");
+  await page.getByRole("button", { name: "Save signature", exact: true }).click();
+  await page.getByRole("combobox", { name: "Signature sender" }).selectOption(shared.address);
+  assert.equal(await page.getByRole("textbox", { name: "Signature text" }).inputValue(), "");
+  await page.getByRole("textbox", { name: "Signature text" }).fill("Shared team signature");
+  await page.getByRole("button", { name: "Save signature", exact: true }).click();
+  await page.getByRole("button", { name: "Close settings", exact: true }).click();
   await page.getByRole("button", { name: "New message" }).click();
+  await page.getByRole("button", { name: "Insert signature", exact: true }).click();
+  assert.equal(await page.getByRole("textbox", { name: "Message body" }).inputValue(), "Alex signature");
+  await page.getByRole("combobox", { name: "From", exact: true }).selectOption(shared.address);
+  await page.getByRole("textbox", { name: "Message body" }).fill("");
+  await page.getByRole("button", { name: "Insert signature", exact: true }).click();
+  assert.equal(await page.getByRole("textbox", { name: "Message body" }).inputValue(), "Shared team signature");
+  await page.getByRole("combobox", { name: "From", exact: true }).selectOption(account.address);
+  console.log("PASS sender-specific signatures stay separate for personal and shared mailboxes");
   await page
     .getByRole("textbox", { name: "To", exact: true })
     .fill("emma@example.com");
@@ -336,6 +360,17 @@ try {
   console.log(
     "PASS draft-cleanup failure remains visible after refresh and does not report delivery as failed",
   );
+  failIndex = true;
+  await page.getByRole("button", { name: "Refresh mailbox", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Attachment search could not be refreshed" }).waitFor();
+  await page.locator(".row-content").filter({ hasText: mail.subject }).click();
+  await page.getByRole("button", { name: "Download contract.txt" }).waitFor();
+  failIndex = false;
+  await page.getByRole("button", { name: "Close message" }).click();
+  await page.getByRole("button", { name: "Refresh mailbox", exact: true }).click();
+  await search.fill("has:attachment");
+  await page.locator(".row-content").filter({ hasText: mail.subject }).waitFor();
+  console.log("PASS attachment index failure leaves mailbox and reader usable; refresh restores attachment search");
 } finally {
   await browser.close();
 }

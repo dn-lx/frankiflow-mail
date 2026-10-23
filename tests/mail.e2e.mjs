@@ -140,6 +140,8 @@ try {
   await page.getByRole("button", { name: "Close settings" }).click();
   assert.equal(await page.locator(".workspace.compact").count(), 1);
   await page.reload();
+  await page.locator('html[data-theme="dark"]').waitFor();
+  await page.locator(".workspace.compact").waitFor();
   assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
   await page.getByRole("button", { name: "Toggle color theme" }).click();
   await page
