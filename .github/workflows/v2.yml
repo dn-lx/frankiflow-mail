@@ -40,6 +40,7 @@ jobs:
             npx playwright install --with-deps chromium
             mail_chromium_path="$(node -e 'process.stdout.write(require("playwright").chromium.executablePath())')"
           fi
+          "$mail_chromium_path" --version
           printf 'CHROMIUM_PATH=%s\n' "$mail_chromium_path" >> "$GITHUB_ENV"
       - name: Browser regression tests
         run: |

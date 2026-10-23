@@ -128,6 +128,9 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   const [notice, setNotice] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [composer, setComposer] = useState<Compose | null>(null);
+  function updateComposer(patch: Partial<Compose> | ((current: Compose) => Partial<Compose>)) {
+    setComposer(current => current ? { ...current, ...(typeof patch === "function" ? patch(current) : patch) } : null);
+  }
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const sendingLock = useRef(false);
@@ -1781,7 +1784,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                     aria-label="From"
                     value={composer.fromAddress}
                     onChange={(e) =>
-                      setComposer({ ...composer, fromAddress: e.target.value })
+                      updateComposer({ fromAddress: e.target.value })
                     }
                   >
                     {accounts.map((a) => (
@@ -1801,7 +1804,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                     list="mail-contact-options"
                     value={composer.to}
                     onChange={(e) =>
-                      setComposer({ ...composer, to: e.target.value })
+                      updateComposer({ to: e.target.value })
                     }
                   />
                   <button
@@ -1820,7 +1823,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                         aria-label="Cc"
                         value={composer.cc}
                         onChange={(e) =>
-                          setComposer({ ...composer, cc: e.target.value })
+                          updateComposer({ cc: e.target.value })
                         }
                       />
                     </label>
@@ -1830,7 +1833,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                         aria-label="Bcc"
                         value={composer.bcc}
                         onChange={(e) =>
-                          setComposer({ ...composer, bcc: e.target.value })
+                          updateComposer({ bcc: e.target.value })
                         }
                       />
                     </label>
@@ -1843,7 +1846,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                     placeholder="What’s on your mind?"
                     value={composer.subject}
                     onChange={(e) =>
-                      setComposer({ ...composer, subject: e.target.value })
+                      updateComposer({ subject: e.target.value })
                     }
                   />
                 </label>
@@ -1870,18 +1873,18 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 </div>
               )}
             </fieldset>
-            {composer.deliveryUnconfirmed && <div className="compose-error" role="alert">Check the provider delivery status before retrying. The original files are kept in a draft. <button type="button" className="text-button" onClick={() => { if (window.confirm("Have you confirmed this email was not delivered or scheduled?")) setComposer({ ...composer, deliveryUnconfirmed: false }); }}>I checked delivery; allow retry</button></div>}
+            {composer.deliveryUnconfirmed && <div className="compose-error" role="alert">Check the provider delivery status before retrying. The original files are kept in a draft. <button type="button" className="text-button" onClick={() => { if (window.confirm("Have you confirmed this email was not delivered or scheduled?")) updateComposer({ deliveryUnconfirmed: false }); }}>I checked delivery; allow retry</button></div>}
             {(error || recovery.storageError) && (
               <div className="compose-error" role="alert">
                 {error || recovery.storageError}
               </div>
             )}
             {insertMenu && <div className="composer-inserts">
-              <label>Contact<select disabled={sending} aria-label="Insert contact" defaultValue="" onChange={event => { if (event.target.value) setComposer({ ...composer, to: recipients([composer.to, event.target.value]).join(", ") }); event.target.value = ""; }}><option value="">Choose contact…</option>{workspace.data.contacts.map(contact => <option key={contact.id} value={contact.email}>{contact.display_name || contact.email} · {contact.email}</option>)}</select></label>
-              <label>Template (replaces message)<select disabled={sending} aria-label="Insert template" defaultValue="" onChange={event => { const template = workspace.data.templates.find(t => t.id === event.target.value); if (template) setComposer({ ...composer, subject: template.subject || composer.subject, text: template.text_body || htmlText(template.html_body || ""), html: template.html_body ? sanitizeComposeHtml(template.html_body) : undefined }); event.target.value = ""; }}><option value="">Choose template…</option>{workspace.data.templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
-              <label>Saved signature<select disabled={sending} aria-label="Insert saved signature" defaultValue="" onChange={event => { const signature = workspace.data.signatures.find(t => t.id === event.target.value); if (signature) setComposer({ ...composer, text: `${composer.text}\n\n${htmlText(signature.html_body)}`, html: `${sanitizeComposeHtml(composer.html || plainHtml(composer.text))}<br><br>${sanitizeComposeHtml(signature.html_body)}` }); event.target.value = ""; }}><option value="">Choose signature…</option>{workspace.data.signatures.filter(signature => !signature.account_id || accounts.find(a => a.address === composer.fromAddress)?.id === signature.account_id).map(signature => <option key={signature.id} value={signature.id}>{signature.name}</option>)}</select></label>
+              <label>Contact<select disabled={sending} aria-label="Insert contact" defaultValue="" onChange={event => { const address = event.target.value; if (address) updateComposer(current => ({ to: recipients([current.to, address]).join(", ") })); event.target.value = ""; }}><option value="">Choose contact…</option>{workspace.data.contacts.map(contact => <option key={contact.id} value={contact.email}>{contact.display_name || contact.email} · {contact.email}</option>)}</select></label>
+              <label>Template (replaces message)<select disabled={sending} aria-label="Insert template" defaultValue="" onChange={event => { const template = workspace.data.templates.find(t => t.id === event.target.value); if (template) updateComposer(current => ({ subject: template.subject || current.subject, text: template.text_body || htmlText(template.html_body || ""), html: template.html_body ? sanitizeComposeHtml(template.html_body) : undefined })); event.target.value = ""; }}><option value="">Choose template…</option>{workspace.data.templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
+              <label>Saved signature<select disabled={sending} aria-label="Insert saved signature" defaultValue="" onChange={event => { const signature = workspace.data.signatures.find(t => t.id === event.target.value); if (signature) updateComposer(current => ({ text: `${current.text}\n\n${htmlText(signature.html_body)}`, html: `${sanitizeComposeHtml(current.html || plainHtml(current.text))}<br><br>${sanitizeComposeHtml(signature.html_body)}` })); event.target.value = ""; }}><option value="">Choose signature…</option>{workspace.data.signatures.filter(signature => !signature.account_id || accounts.find(a => a.address === composer.fromAddress)?.id === signature.account_id).map(signature => <option key={signature.id} value={signature.id}>{signature.name}</option>)}</select></label>
             </div>}
-            {scheduleVisible && <div className="schedule-entry"><label>Deliver at (your local time)<input disabled={sending} aria-label="Scheduled delivery time" type="datetime-local" value={composer.scheduledAt ? instantToLocal(composer.scheduledAt, Intl.DateTimeFormat().resolvedOptions().timeZone) : ""} onChange={event => setComposer({ ...composer, scheduledAt: event.target.value ? new Date(event.target.value).toISOString() : undefined })} /></label><button type="button" className="text-button" disabled={sending} onClick={() => { setComposer({ ...composer, scheduledAt: undefined }); setScheduleVisible(false); }}>Send immediately instead</button></div>}
+            {scheduleVisible && <div className="schedule-entry"><label>Deliver at (your local time)<input disabled={sending} aria-label="Scheduled delivery time" type="datetime-local" value={composer.scheduledAt ? instantToLocal(composer.scheduledAt, Intl.DateTimeFormat().resolvedOptions().timeZone) : ""} onChange={event => updateComposer({ scheduledAt: event.target.value ? new Date(event.target.value).toISOString() : undefined })} /></label><button type="button" className="text-button" disabled={sending} onClick={() => { updateComposer({ scheduledAt: undefined }); setScheduleVisible(false); }}>Send immediately instead</button></div>}
             <div className="composer-footer">
               <button
                 className="primary-button"
@@ -1911,17 +1914,19 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 aria-label="Insert signature"
                 title={signature ? "Insert signature" : "Add a signature in Settings"}
                 disabled={sending || !signature.trim()}
-                onClick={() => {
-                  if (composer.html) { setComposer({ ...composer, text: `${composer.text}\n\n${signature}`, html: `${sanitizeComposeHtml(composer.html)}<br><br>${plainHtml(signature)}` }); return; }
+                onClick={(event) => {
+                  const trigger = event.currentTarget;
+                  if (composer.html) { updateComposer({ text: `${composer.text}\n\n${signature}`, html: `${sanitizeComposeHtml(composer.html)}<br><br>${plainHtml(signature)}` }); return; }
                   const field = bodyRef.current;
                   if (!field) return;
                   const start = field.selectionStart;
                   const end = field.selectionEnd;
-                  const before = composer.text.slice(0, start);
-                  const after = composer.text.slice(end);
+                  const before = field.value.slice(0, start);
+                  const after = field.value.slice(end);
                   const insert = `${before && !before.endsWith("\n\n") ? "\n\n" : ""}${signature}${after && !after.startsWith("\n") ? "\n\n" : ""}`;
-                  setComposer({ ...composer, text: before + insert + after });
+                  updateComposer({ text: before + insert + after });
                   requestAnimationFrame(() => {
+                    if (!field.isConnected || (document.activeElement !== trigger && document.activeElement !== field)) return;
                     field.focus();
                     field.setSelectionRange(start + insert.length, start + insert.length);
                   });
