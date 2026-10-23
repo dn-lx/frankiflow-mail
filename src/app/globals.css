@@ -1992,3 +1992,99 @@ kbd {
 }
 .signature-settings textarea { resize: vertical; line-height: 1.6; }
 .signature-settings [role=alert] { color: #b64545; }
+
+/* Native workspace tools and composer */
+.sidebar { overflow-y: auto; }
+.sidebar nav { flex-shrink: 0; }
+.sidebar-tools { padding: 8px 0 12px; border-top: 1px solid var(--border); margin-top: 10px; }
+.sidebar-tools .nav-item { min-height: 34px; padding-top: 8px; padding-bottom: 8px; font-size: 11px; }
+.sidebar-organize { margin: 8px 12px; font-size: 10px; }
+.sidebar-note { display: none; }
+.sidebar-bottom { margin-top: auto; flex-shrink: 0; }
+.label-dot { display: inline-block; height: 9px; width: 9px; border-radius: 3px; flex-shrink: 0; }
+.message-labels { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 5px; color: var(--accent); }
+.message-label { padding: 1px 5px; border: 1px solid; border-radius: 4px; font-size: 9px; line-height: 1.5; }
+.priority-marker { color: #a86b2b; font-size: 9px; }
+.workspace-modal-backdrop { z-index: 120; }
+.workspace-modal { width: 820px; max-width: 100%; max-height: 90dvh; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); padding: 28px; }
+.workspace-modal > header { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 20px; }
+.workspace-modal h2 { margin: 8px 0 0; font: 27px Georgia,serif; }
+.tools-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding-bottom: 15px; border-bottom: 1px solid var(--border); }
+.tools-tabs button { display: flex; gap: 6px; padding: 9px 10px; border-radius: 6px; font-size: 12px; color: var(--muted); }
+.tools-tabs button.active { color: var(--accent); background: var(--accent-soft); }
+.tools-list-toolbar { display: flex; gap: 12px; margin: 20px 0; align-items: center; }
+.tools-list-toolbar input { flex: 1; min-width: 0; }
+.tools-list-toolbar .primary-button { white-space: nowrap; }
+.tools-form label { display: grid; gap: 7px; font-size: 12px; margin: 12px 0; }
+.tools-form input:not([type=checkbox]), .tools-form select, .tools-form textarea, .tools-list-toolbar input,
+.reader-picker input, .composer-inserts select, .schedule-entry input, .link-entry input {
+  padding: 10px 11px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; min-width: 0; width: 100%; font: inherit;
+}
+.tools-form input[type=color] { height: 38px; padding: 3px; }
+.tools-form textarea { min-height: 95px; resize: vertical; line-height: 1.7; }
+.tools-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.tools-form h3, .push-settings h3 { font-size: 15px; margin: 20px 0 10px; }
+.tools-form h4 { font-size: 12px; margin: 18px 0 8px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.tools-form .check-label, .reader-picker .check-label { display: flex; gap: 9px; align-items: center; font-size: 12px; line-height: 1.6; }
+.check-label input { flex-shrink: 0; accent-color: var(--accent); }
+.tools-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.tools-actions .secondary-button { font-size: 11px; padding: 8px 12px; }
+.tools-actions .text-button { font-size: 11px; }
+.tools-list { display: grid; gap: 10px; }
+.tool-card { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 9px; }
+.tool-card strong { font-size: 13px; }
+.tool-card p, .tools-help, .tools-notice, .push-settings p, .tools-form > p { font-size: 12px; color: var(--muted); line-height: 1.7; overflow-wrap: anywhere; }
+.tools-notice { color: var(--accent); }
+.tool-card .tools-actions { justify-content: flex-end; }
+.tools-empty { padding: 60px 15px; text-align: center; color: var(--muted); font-size: 13px; }
+.rich-editor { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.format-toolbar { display: flex; align-items: center; gap: 3px; padding: 8px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.format-toolbar .text-button { font-size: 11px; margin-right: 10px; }
+.format-toolbar .icon-button { width: 27px; height: 27px; }
+.rich-body { white-space: normal; overflow-y: auto; outline: none; line-height: 1.8; }
+.rich-body img { max-width: 100%; height: auto; }
+.rich-body a { color: var(--accent); text-decoration: underline; }
+.rich-body ul, .rich-body ol { padding-left: 22px; }
+.tools-form .rich-editor { border: 1px solid var(--border); border-radius: 8px; min-height: 200px; }
+.tools-form .compose-body { padding: 14px; min-height: 160px; }
+.link-entry { display: flex; padding: 8px 20px; gap: 8px; }
+.composer-inserts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding: 12px 22px; border-top: 1px solid var(--border); }
+.composer-inserts label, .schedule-entry label { display: grid; gap: 6px; font-size: 10px; color: var(--muted); }
+.composer-inserts select { font-size: 11px; padding: 7px; }
+.schedule-entry { display: flex; align-items: end; gap: 14px; padding: 12px 22px; border-top: 1px solid var(--border); }
+.schedule-entry input { font-size: 12px; }
+.schedule-entry button { font-size: 11px; padding: 10px 0; }
+.composer-footer { flex-wrap: wrap; row-gap: 8px; }
+.composer-footer .icon-button { width: 30px; }
+.advanced-settings { border-top: 1px solid var(--border); margin-top: 20px; padding: 18px 0; }
+.advanced-settings > summary { cursor: pointer; font-size: 12px; color: var(--accent); }
+.advanced-settings .form-grid { grid-template-columns: 1fr; }
+.advanced-settings .tools-form { margin-top: 20px; }
+.settings-tools-links { padding: 12px 0 20px; }
+.push-settings { border-top: 1px solid var(--border); margin-top: 20px; }
+.reader-extra-tools { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 22px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.reader-extra-tools button { display: flex; align-items: center; gap: 4px; font-size: 10px; }
+.reader-picker, .scheduled-banner { border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 18px; font-size: 12px; background: var(--hover); }
+.reader-picker > label { display: grid; gap: 8px; margin: 10px 0; }
+.scheduled-banner { display: grid; gap: 12px; color: var(--accent); }
+.preview-off:not(.reading) .reader { display: none; }
+.preview-off:not(.reading) .message-list { width: 100%; max-width: none; flex: 1; }
+.preview-off.reading .message-list { display: none; }
+.preview-off.reading .reader { flex: 1; width: 100%; }
+.assistant-result { border-top: 1px solid var(--border); margin-top: 22px; padding-top: 18px; }
+.assistant-result .email-body { padding: 16px 0; }
+@media(max-width:700px) {
+  .workspace-modal { padding: 20px; max-height: 94dvh; }
+  .tools-tabs button { font-size: 11px; padding: 8px; }
+  .form-grid { grid-template-columns: 1fr; gap: 0; }
+  .tool-card { flex-direction: column; align-items: stretch; }
+  .tool-card .tools-actions { justify-content: flex-start; }
+  .composer-inserts { grid-template-columns: 1fr; max-height: 160px; overflow: auto; padding: 10px 16px; }
+  .schedule-entry { flex-wrap: wrap; padding: 10px 16px; }
+  .composer-footer { padding: 12px 16px; gap: 6px; }
+  .composer-footer .primary-button { padding: 10px 12px; }
+  .composer-footer .icon-button { width: 26px; }
+  .format-toolbar { padding: 7px 12px; }
+  .reader-extra-tools { gap: 13px; }
+}

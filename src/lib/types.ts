@@ -29,6 +29,10 @@ export type Message = {
   has_attachments: boolean;
   created_at: string;
   attachments?: Attachment[];
+  snoozed_until?: string | null;
+  scheduled_at?: string | null;
+  is_pinned?: boolean;
+  priority?: string;
 };
 export type Account = {
   id: string;
@@ -46,4 +50,10 @@ export type Compose = {
   fromAddress: string;
   thread_id?: string;
   in_reply_to?: string;
+  html?: string;
+  scheduledAt?: string;
+  event_id?: string;
+  event_method?: "REQUEST" | "CANCEL";
+  event_sequence?: number;
+  deliveryUnconfirmed?: boolean;
 };

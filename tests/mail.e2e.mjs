@@ -58,7 +58,7 @@ try {
   pass("attachment remains visible after reopening same conversation");
   await page.getByRole("button", { name: "New message" }).click();
   await page
-    .getByRole("textbox", { name: "To", exact: true })
+    .getByRole("combobox", { name: "To", exact: true })
     .fill("recipient@example.com");
   await page
     .getByRole("textbox", { name: "Subject", exact: true })
@@ -103,7 +103,7 @@ try {
   assert.equal(await page.locator(".message-row").count(), 1);
   await page.getByRole("button", { name: "Clear search" }).click();
   await page.getByRole("button", { name: "New message" }).click();
-  await page.getByRole("textbox", { name: "To", exact: true }).fill("invalid");
+  await page.getByRole("combobox", { name: "To", exact: true }).fill("invalid");
   await page.getByRole("button", { name: "Send in demo" }).click();
   await page
     .getByRole("dialog")

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
-  Archive,
+  Archive, CalendarDays, Clock, Tag, FileText, ContactRound, Sparkles, Pin,
   ArrowDownToLine,
   ArrowLeft,
   ArrowUpRight,
@@ -38,6 +38,16 @@ import {
   X,
 } from "lucide-react";
 import { getSupabase, attachmentBucket } from "@/lib/supabase";
+import { WorkspaceTools } from "@/components/workspace-tools";
+import { WritingAssistant } from "@/components/writing-assistant";
+import { AdvancedSettings } from "@/components/advanced-settings";
+import { RichEditor } from "@/components/rich-editor";
+import { useWorkspace, invokeMail } from "@/hooks/use-workspace";
+import { usePush } from "@/hooks/use-push";
+import { saveServerDraft, removeDraft } from "@/lib/drafts";
+import { sanitizeComposeHtml, htmlText, plainHtml, inlineFiles } from "@/lib/rich-text";
+import { calendarText, matchesRule, rulePatch, instantToLocal } from "@/lib/organization.mjs";
+import type { Resource, Entry } from "@/lib/workspace";
 import { SignatureSettings } from "@/components/signature-settings";
 import { useSignatures } from "@/hooks/use-signatures";
 import { useDraftRecovery } from "@/hooks/use-draft-recovery";
@@ -59,6 +69,9 @@ const folders = [
   { id: "starred", label: "Starred", icon: Star },
   { id: "sent", label: "Sent", icon: Send },
   { id: "drafts", label: "Drafts", icon: File },
+  { id: "scheduled", label: "Scheduled", icon: Clock },
+  { id: "snoozed", label: "Snoozed", icon: Clock },
+  { id: "all", label: "All mail", icon: Mail },
   { id: "archive", label: "Archive", icon: Archive },
   { id: "spam", label: "Spam", icon: ShieldCheck },
   { id: "trash", label: "Trash", icon: Trash2 },
@@ -85,11 +98,23 @@ const errorText = (e: unknown) =>
       ? String(e.message)
       : "Something went wrong. Please try again.";
 const storageKey = "frankiflow-demo-v2";
-type MoveSnapshot = Pick<Message, "id" | "folder" | "trashed_at">;
+type MoveSnapshot = Pick<Message, "id" | "folder" | "trashed_at" | "snoozed_until">;
 
 export default function MailApp({ demo = false }: { demo?: boolean }) {
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(demo);
+  const workspace = useWorkspace(demo, session?.user.id);
+  const preferences = workspace.data.preferences;
+  const push = usePush(demo, session?.user.id);
+  const [tools, setTools] = useState<Resource | null>(null);
+  const [assistant, setAssistant] = useState(false);
+  const [insertMenu, setInsertMenu] = useState(false);
+  const [scheduleVisible, setScheduleVisible] = useState(false);
+  const [labelPicker, setLabelPicker] = useState(false);
+  const [snoozePicker, setSnoozePicker] = useState(false);
+  const [snoozeTime, setSnoozeTime] = useState("");
+  const preferencesRef = useRef(preferences); preferencesRef.current = preferences;
+  const rulesProcessed = useRef(new Set<string>());
   const [messages, setMessages] = useState<Message[]>([]);
   const [accounts, setAccounts] = useState<Account[]>(demo ? demoAccounts : []);
   const [folder, setFolder] = useState("inbox");
@@ -126,11 +151,11 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   const loadGeneration = useRef(0);
   const sessionUser = useRef<string | null>(null);
   const message = messages.find((m) => m.id === active);
+  const selectedLabel = folder.startsWith("label:") ? folder.slice(6) : null;
+  const folderTitle = folders.find(f => f.id === folder)?.label || workspace.data.labels.find(l => l.id === selectedLabel)?.name || "Mail";
   const visible: Message[] = filterMessages(
-    messages,
-    folder,
-    query,
-    unreadOnly,
+    messages.filter(m => !selectedLabel || workspace.data.links.some(link => link.message_id === m.id && link.label_id === selectedLabel)).map(m => ({ ...m, label_names: workspace.data.links.filter(link => link.message_id === m.id).map(link => workspace.data.labels.find(l => l.id === link.label_id)?.name || "") })),
+    selectedLabel ? "all" : folder, query, unreadOnly,
   );
   const ownAddress = accounts[0]?.address || "";
 
@@ -204,6 +229,8 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       try {
         const saved = localStorage.getItem(storageKey);
         setMessages(saved ? JSON.parse(saved) : demoMessages());
+        const names = JSON.parse(localStorage.getItem("frankiflow-demo-account-names-v2") || "{}");
+        setAccounts(demoAccounts.map(a => ({ ...a, display_name: typeof names[a.address] === "string" ? names[a.address] : a.display_name })));
       } catch {
         setMessages(demoMessages());
       }
@@ -224,6 +251,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         setComposer(null);
         setFiles([]);
         setUndo(null);
+        setTools(null); setAssistant(false); rulesProcessed.current.clear();
         setBusy(false);
       }
       setSession(s);
@@ -263,7 +291,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   }, []);
 
   useEffect(() => {
-    if (!composer && !settings) return;
+    if (tools || assistant || (!composer && !settings)) return;
     const previous = document.activeElement as HTMLElement | null;
     const modal = document.querySelector<HTMLElement>('[role="dialog"]');
     const focusable = () =>
@@ -295,7 +323,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       previous?.focus();
     };
     // Focus is initialized when opening a modal, not after every keystroke.
-  }, [Boolean(composer), settings]);
+  }, [Boolean(composer), settings, tools, assistant]);
 
   useEffect(() => {
     if (session && !demo) void load();
@@ -307,7 +335,19 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "frankiflow_mail_messages" },
-        () => {
+        (payload) => {
+          const incoming = payload.new as Message;
+          const prefs = preferencesRef.current;
+          if (payload.eventType === "INSERT" && incoming.direction === "inbound" && incoming.folder === "inbox") {
+            setNotice(`New mail: ${incoming.subject || "No subject"}`);
+            if (prefs.notifications_enabled && !push.active && document.hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
+              const notification = new Notification(incoming.from_name || incoming.from_address, { body: incoming.subject || "New message", icon: "/icon-192.png", tag: incoming.id });
+              notification.onclick = () => { window.focus(); setFolder("inbox"); setActive(incoming.id); notification.close(); };
+            }
+            if (prefs.notification_sound) {
+              try { const audio = new AudioContext(); const oscillator = audio.createOscillator(); const volume = audio.createGain(); volume.gain.value = 0.035; oscillator.connect(volume); volume.connect(audio.destination); oscillator.frequency.value = 660; oscillator.start(); oscillator.stop(audio.currentTime + 0.12); oscillator.onended = () => void audio.close(); } catch {}
+            }
+          }
           attachmentCache.current.clear();
           void load();
         },
@@ -316,7 +356,14 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     return () => {
       void getSupabase().removeChannel(channel);
     };
-  }, [session, demo, load]);
+  }, [session, demo, load, push.active]);
+  useEffect(() => {
+    if (!workspace.ready) return;
+    const media = matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => setDark(preferences.theme === "dark" || (preferences.theme === "system" && media.matches));
+    apply(); setCompact(preferences.density === "compact");
+    media.addEventListener("change", apply); return () => media.removeEventListener("change", apply);
+  }, [workspace.ready, preferences.theme, preferences.density]);
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     try {
@@ -381,16 +428,23 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       return false;
     }
     setFiles(initialFiles);
+    setScheduleVisible(Boolean(seed.scheduledAt)); setInsertMenu(false);
     setCcVisible(Boolean(seed.cc || seed.bcc));
-    setComposer({
+    const next: Compose = {
       to: "",
       cc: "",
       bcc: "",
       subject: "",
       text: "",
-      fromAddress: accounts.find((a) => a.is_primary)?.address || ownAddress,
+      fromAddress: accounts.find(a => a.address === preferences.default_sender_address)?.address || accounts.find((a) => a.is_primary)?.address || ownAddress,
       ...seed,
-    });
+    };
+    if (preferences.signature_enabled && !seed.id && !seed.text && !seed.html) {
+      const account = accounts.find(a => a.address === next.fromAddress);
+      const saved = workspace.data.signatures.find(signature => signature.is_default && signature.account_id === account?.id) || workspace.data.signatures.find(signature => signature.is_default && !signature.account_id);
+      if (saved) { next.html = sanitizeComposeHtml(saved.html_body); next.text = htmlText(next.html || ""); }
+    }
+    setComposer(next);
     setError("");
     return true;
   }
@@ -450,12 +504,13 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         setSidebar(false);
         return;
       }
+      if (!preferences.keyboard_shortcuts) return;
       if (
         target.closest("input,textarea,select,[contenteditable]") ||
         e.ctrlKey ||
         e.metaKey ||
         e.altKey ||
-        composer ||
+        composer || tools || assistant ||
         settings
       )
         return;
@@ -474,15 +529,17 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
 
   async function patch(ids: string[], updates: Partial<Message>) {
     if (mutationLock.current) return false;
+    if (updates.folder && messages.some(message => ids.includes(message.id) && message.folder === "scheduled")) { setError("Cancel the scheduled delivery before moving this message."); return false; }
     mutationLock.current = true;
     setMutationBusy(true);
     setError("");
     const snapshots = messages
       .filter((m) => ids.includes(m.id))
-      .map(({ id, folder, trashed_at }) => ({
+      .map(({ id, folder, trashed_at, snoozed_until }) => ({
         id,
         folder,
         trashed_at: trashed_at || null,
+        snoozed_until: snoozed_until || null,
       }));
     const owner = sessionUser.current;
     const changes = {
@@ -491,6 +548,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         ? {
             trashed_at:
               updates.folder === "trash" ? new Date().toISOString() : null,
+            ...(updates.folder !== "snoozed" ? { snoozed_until: null } : {}),
           }
         : {}),
     };
@@ -539,6 +597,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
             .update({
               folder: snapshot.folder,
               trashed_at: snapshot.trashed_at || null,
+              snoozed_until: snapshot.snoozed_until || null,
               updated_at: new Date().toISOString(),
             })
             .eq("id", snapshot.id);
@@ -583,11 +642,14 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         newMessage(
           {
             id: m.id,
+            deliveryUnconfirmed: m.direction === "outbound",
             to: m.to_addresses.join(", "),
             cc: m.cc_addresses?.join(", ") || "",
             bcc: m.bcc_addresses?.join(", ") || "",
             subject: m.subject,
-            text: m.text_body,
+            text: m.text_body || htmlText(m.html_body || ""),
+            html: m.html_body || undefined,
+            scheduledAt: m.scheduled_at || undefined,
             fromAddress: m.from_address,
           },
           draftFiles,
@@ -598,7 +660,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       return;
     }
     setActive(m.id);
-    if (!m.is_read) void patch([m.id], { is_read: true });
+    if (!m.is_read && preferences.mark_read_on_open) void patch([m.id], { is_read: true });
   }
   function changeFolder(id: string) {
     setFolder(id);
@@ -606,7 +668,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     setQuery("");
     setUnreadOnly(false);
     setSelected(new Set());
-    setSidebar(false);
+    setSidebar(false); setLabelPicker(false); setSnoozePicker(false);
     setError("");
   }
   function addFiles(incoming: File[]) {
@@ -621,12 +683,14 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   async function saveDraft() {
     if (!composer || sendingLock.current) return;
     const data = composer;
+    if (data.deliveryUnconfirmed) { setError("Check delivery status before saving or retrying this message. Your device recovery copy keeps the files and the delivery warning."); return; }
     if (
       !data.to &&
       !data.cc &&
       !data.bcc &&
       !data.subject &&
       !data.text &&
+      !data.html &&
       !files.length
     ) {
       await recovery.clear().catch(() => {});
@@ -634,25 +698,6 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       return;
     }
     sendingLock.current = true;
-    if (files.length && !demo) {
-      setSending(true);
-      try {
-        await recovery.save(data, files);
-        setComposer(null);
-        setFiles([]);
-        setNotice(
-          "Draft and attachments kept on this device. Resume it from the recovery banner.",
-        );
-      } catch {
-        setError(
-          "The draft could not be saved. Keep the composer open to avoid losing its attachments.",
-        );
-      } finally {
-        sendingLock.current = false;
-        setSending(false);
-      }
-      return;
-    }
     setSending(true);
     try {
       const row = {
@@ -665,7 +710,8 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         bcc_addresses: recipients(data.bcc),
         subject: data.subject,
         text_body: data.text,
-        html_body: "",
+        html_body: data.html || "",
+        scheduled_at: data.scheduledAt || null,
         preview: data.text.slice(0, 180),
         is_read: true,
         updated_at: new Date().toISOString(),
@@ -692,14 +738,9 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           ...prev.filter((m) => m.id !== id),
         ]);
       } else {
-        const result = data.id
-          ? await getSupabase()
-              .from("frankiflow_mail_messages")
-              .update(row)
-              .eq("id", data.id)
-          : await getSupabase().from("frankiflow_mail_messages").insert(row);
-        if (result.error) throw result.error;
+        const result = await saveServerDraft(data, files, accounts);
         await load();
+        if (result.warning) setError(result.warning);
       }
       await recovery.clear().catch(() => {
         setError(
@@ -723,14 +764,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     setError("");
     const id = composer.id;
     try {
-      if (id && !demo) {
-        const { error } = await getSupabase()
-          .from("frankiflow_mail_messages")
-          .delete()
-          .eq("id", id)
-          .eq("folder", "drafts");
-        if (error) throw error;
-      }
+      if (id && !demo) await removeDraft(id);
       await recovery.clear().catch(() => {
         setError(
           "Draft discarded, but its recovery copy could not be removed from device storage.",
@@ -749,7 +783,9 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   }
   async function send(e: React.FormEvent) {
     e.preventDefault();
-    if (!composer || sendingLock.current) return;
+    if (!composer || sendingLock.current || composer.deliveryUnconfirmed) return;
+    if (composer.scheduledAt && Date.parse(composer.scheduledAt) < Date.now() + 60000) { setError("Schedule delivery at least one minute in the future."); return; }
+    if (composer.text.length > 100000 || (composer.html?.length || 0) > 850000) { setError("This message is too large. Attach large images or documents as files."); return; }
     if (
       !validRecipients(composer.to) ||
       [composer.cc, composer.bcc].some((v) => v.trim() && !validRecipients(v))
@@ -771,7 +807,10 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     setError("");
     let deliveryWarning = "";
     try {
-      const attachments = await encodeFiles(files);
+      const formatted = composer.html ? inlineFiles(composer.html) : { html: undefined, inline: [] };
+      const allFiles = [...files, ...formatted.inline.map(image => image.file)];
+      const sizeError = validateFiles(allFiles); if (sizeError) throw new Error(sizeError);
+      const attachments = (await encodeFiles(allFiles)).map((file, index) => ({ ...file, ...(index >= files.length ? { contentId: formatted.inline[index - files.length].contentId } : {}) }));
       if (demo) {
         const sent: Message = {
           id: crypto.randomUUID(),
@@ -783,7 +822,9 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           thread_id: composer.thread_id,
           subject: composer.subject,
           text_body: composer.text,
-          folder: "sent",
+          html_body: composer.html,
+          scheduled_at: composer.scheduledAt || null,
+          folder: composer.scheduledAt ? "scheduled" : "sent",
           direction: "outbound",
           is_read: true,
           is_starred: false,
@@ -792,7 +833,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           attachments: attachments.map((a, i) => ({
             id: crypto.randomUUID(),
             filename: a.filename,
-            size_bytes: files[i].size,
+            size_bytes: allFiles[i].size,
             content_type: a.contentType,
             dataUrl: `data:${a.contentType};base64,${a.content}`,
           })),
@@ -801,41 +842,31 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           sent,
           ...prev.filter((m) => m.id !== composer.id),
         ]);
-        setFolder("sent");
+        setFolder(composer.scheduledAt ? "scheduled" : "sent");
         setActive(sent.id);
         setQuery("");
       } else {
-        const { data, error } = await getSupabase().functions.invoke(
-          "send-mail",
-          {
-            body: {
-              ...composer,
-              to: recipients(composer.to),
-              cc: recipients(composer.cc),
-              bcc: recipients(composer.bcc),
-              attachments,
-              draft_id: composer.id || null,
-            },
-          },
-        );
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
+        const data = await invokeMail("send-mail", {
+          ...composer, html: formatted.html, archive_html: composer.html ? sanitizeComposeHtml(composer.html) : undefined,
+          to: recipients(composer.to), cc: recipients(composer.cc), bcc: recipients(composer.bcc),
+          attachments, draft_id: composer.id || null,
+        });
         deliveryWarning = typeof data?.warning === "string" ? data.warning : "";
         // A successful delivery must never be reported as failed by later refresh/draft cleanup.
         if (composer.id) {
-          const cleanup = await getSupabase()
-            .from("frankiflow_mail_messages")
-            .delete()
-            .eq("id", composer.id)
-            .eq("folder", "drafts");
-          if (cleanup.error)
-            deliveryWarning = [deliveryWarning,
-              "Email sent, but the old draft could not be removed. Refresh before sending again."].filter(Boolean).join(" ");
+          try { await removeDraft(composer.id); }
+          catch { deliveryWarning = [deliveryWarning,
+            "Email sent, but the old draft could not be removed. Refresh before sending again."].filter(Boolean).join(" "); }
         }
         attachmentCache.current.clear();
         await load();
-        setFolder("sent");
+        setFolder(composer.scheduledAt ? "scheduled" : "sent");
         setActive(null);
+      }
+      if (composer.event_id) {
+        const event = workspace.data.events.find(event => event.id === composer.event_id);
+        if (event) try { await workspace.save("events", { id: event.id, status: composer.event_method === "CANCEL" ? "cancelled" : "sent", sequence: composer.event_sequence ?? event.sequence }); }
+        catch { deliveryWarning = [deliveryWarning, "The invitation was accepted, but its calendar status could not be saved. Do not resend it."].filter(Boolean).join(" "); }
       }
       await recovery.clear().catch(() => {
         deliveryWarning = [deliveryWarning,
@@ -847,15 +878,97 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       setUnreadOnly(false);
       setNotice(
         demo
-          ? "Demo message saved to Sent. No email was delivered."
-          : "Email sent.",
+          ? composer.scheduledAt ? "Demo message saved to Scheduled. No email will be delivered." : "Demo message saved to Sent. No email was delivered."
+          : composer.scheduledAt ? "Email scheduled." : "Email sent.",
       );
     } catch (e) {
-      setError(`Send failed: ${errorText(e)}`);
+      if (e && typeof e === "object" && "deliveryUnconfirmed" in e && e.deliveryUnconfirmed) {
+        setComposer(previous => previous ? { ...previous, deliveryUnconfirmed: true } : null);
+        setError(errorText(e));
+      } else setError(`Send failed: ${errorText(e)}`);
     } finally {
       sendingLock.current = false;
       setSending(false);
     }
+  }
+
+  function prepareInvitation(event: Entry, method: "REQUEST" | "CANCEL") {
+    const address = accounts.find(a => a.id === event.organizer_account_id)?.address || ownAddress;
+    const file = new globalThis.File([calendarText(event, address, method)], "invitation.ics", { type: `text/calendar; charset=utf-8; method=${method}` });
+    newMessage({ fromAddress: address, to: (event.required_attendees || []).join(", "), cc: (event.optional_attendees || []).join(", "), subject: `${method === "CANCEL" ? "Cancelled: " : ""}${event.title}`,
+      text: `${event.title}\n${new Date(event.start_at).toLocaleString()} – ${new Date(event.end_at).toLocaleString()} (${event.timezone})\n${[event.location, event.meeting_url, event.description].filter(Boolean).join("\n\n")}`,
+      event_id: event.id, event_method: method, event_sequence: Number(event.sequence || 0),
+    }, [file]);
+  }
+  async function applyFilters(force = false) {
+    const candidates = messages.filter(m => m.direction === "inbound" && m.folder === "inbox" && (force || !rulesProcessed.current.has(m.id)));
+    for (const original of candidates) {
+      let updated = { ...original };
+      const changes: Record<string, any> = {};
+      const labelIds = new Set(workspace.data.links.filter(link => link.message_id === original.id).map(link => link.label_id));
+      let labelsChanged = false;
+      for (const rule of workspace.data.filters) {
+        if (!matchesRule(updated, rule, accounts)) continue;
+        const change = rulePatch(updated, rule);
+        if (Object.keys(change).length) {
+          if (!demo) { const result = await getSupabase().from("frankiflow_mail_messages").update({ ...change, updated_at: new Date().toISOString() }).eq("id", original.id); if (result.error) throw result.error; }
+          updated = { ...updated, ...change };
+          Object.assign(changes, change);
+        }
+        const label = rule.actions?.label_id;
+        if (label && workspace.data.labels.some(l => l.id === label)) {
+          if (!labelIds.has(label)) { labelIds.add(label); labelsChanged = true; }
+        }
+        if (rule.actions?.stop_processing) break;
+      }
+      if (labelsChanged) await workspace.setLabels(original.id, [...labelIds]);
+      rulesProcessed.current.add(original.id);
+      setMessages(previous => previous.map(m => m.id === original.id ? { ...m, ...changes } : m));
+    }
+  }
+  useEffect(() => {
+    if (!workspace.ready || !workspace.data.filters.length || !messages.length || busy) return;
+    void applyFilters().catch(e => setError(`Could not apply filters: ${errorText(e)}`));
+  }, [workspace.ready, workspace.data.filters, messages.length, busy]);
+  useEffect(() => {
+    const wake = async () => {
+      const due = messages.filter(m => m.folder === "snoozed" && m.snoozed_until && Date.parse(m.snoozed_until) <= Date.now()).map(m => m.id);
+      if (!due.length) return;
+      if (!demo) { const result = await getSupabase().from("frankiflow_mail_messages").update({ folder: "inbox", snoozed_until: null }).in("id", due); if (result.error) { setError(errorText(result.error)); return; } }
+      setMessages(previous => previous.map(m => due.includes(m.id) ? { ...m, folder: "inbox", snoozed_until: null } : m));
+    };
+    void wake(); const timer = setInterval(() => void wake(), 30000); return () => clearInterval(timer);
+  }, [messages, demo]);
+  useEffect(() => {
+    if (!messages.length) return;
+    const url = new URL(location.href), id = url.searchParams.get("message");
+    if (!id) return;
+    const target = messages.find(message => message.id === id);
+    if (target) { setFolder(target.folder); setActive(target.id); }
+    url.searchParams.delete("message"); history.replaceState({}, "", url.pathname + url.search + url.hash);
+  }, [messages.length]);
+  async function cancelSchedule() {
+    if (!message || mutationLock.current) return;
+    mutationLock.current = true; setMutationBusy(true); setError("");
+    try {
+      if (demo) setMessages(previous => previous.map(m => m.id === message.id ? { ...m, folder: "drafts", direction: "draft", scheduled_at: null } : m));
+      else { const result = await invokeMail("mail-v2-actions", { action: "cancel-scheduled", message_id: message.id }); await load(); if (result.warning) setError(result.warning); }
+      setActive(null); setFolder("drafts"); setNotice("Scheduled delivery canceled. The message is in Drafts.");
+    } catch (e) { setError(errorText(e)); } finally { mutationLock.current = false; setMutationBusy(false); }
+  }
+  async function permanentDelete() {
+    if (!message || mutationLock.current || !["trash", "spam"].includes(message.folder)) return;
+    if (preferences.confirm_permanent_delete && !window.confirm("Permanently delete this message and its attachments?")) return;
+    mutationLock.current = true; setMutationBusy(true);
+    try {
+      if (!demo) {
+        const result = await getSupabase().from("frankiflow_mail_attachments").select("storage_path").eq("message_id", message.id); if (result.error) throw result.error;
+        const paths = (result.data || []).map(file => file.storage_path);
+        if (paths.length) { const removed = await getSupabase().storage.from(attachmentBucket).remove(paths); if (removed.error) throw removed.error; }
+        const deleted = await getSupabase().from("frankiflow_mail_messages").delete().eq("id", message.id).eq("folder", message.folder); if (deleted.error) throw deleted.error;
+      }
+      setMessages(previous => previous.filter(m => m.id !== message.id)); setActive(null); setNotice("Message permanently deleted.");
+    } catch (e) { setError(errorText(e)); } finally { mutationLock.current = false; setMutationBusy(false); }
   }
 
   if (!ready)
@@ -909,7 +1022,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 ? m.folder === "inbox" && !m.is_read
                 : item.id === "starred"
                   ? m.is_starred && !["trash", "spam"].includes(m.folder)
-                  : m.folder === item.id,
+                  : item.id === "all" ? !["trash", "spam"].includes(m.folder) : m.folder === item.id,
             ).length;
             return (
               <button
@@ -924,6 +1037,13 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
             );
           })}
         </nav>
+        <div className="sidebar-tools" aria-label="Workspace shortcuts">
+          <button className="nav-item" onClick={() => setTools("contacts")}><ContactRound size={17} />Contacts</button>
+          <button className="nav-item" onClick={() => setTools("events")}><CalendarDays size={17} />Calendar</button>
+          <button className="nav-item" onClick={() => setTools("templates")}><FileText size={17} />Templates & tools</button>
+          {workspace.data.labels.map(label => <button key={label.id} className={`nav-item ${selectedLabel === label.id ? "active" : ""}`} onClick={() => changeFolder(`label:${label.id}`)}><span className="label-dot" style={{ background: label.color }} />{label.name}</button>)}
+          <button className="text-button sidebar-organize" onClick={() => setTools("labels")}>Manage labels & filters</button>
+        </div>
         <div className="sidebar-note">
           <span className="eyebrow">A LITTLE MORE FOCUS</span>
           <p>
@@ -974,7 +1094,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
             </button>
             <span>Workspace</span>
             <ChevronRight size={14} />
-            <strong>{folders.find((f) => f.id === folder)?.label}</strong>
+            <strong>{folderTitle}</strong>
           </div>
           <div className="top-actions">
             {demo && (
@@ -987,7 +1107,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
               className="icon-button"
               title="Toggle color theme"
               aria-label="Toggle color theme"
-              onClick={() => setDark(!dark)}
+              onClick={() => { setDark(!dark); void workspace.savePreferences({ theme: dark ? "light" : "dark" }).catch(e => setError(errorText(e))); }}
             >
               {dark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
@@ -1008,7 +1128,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           <div>
             <div className="eyebrow">YOUR DAY, A LITTLE CLEARER</div>
             <h1>
-              {folders.find((f) => f.id === folder)?.label}
+              {folderTitle}
               <span>{visible.length}</span>
             </h1>
             <p>
@@ -1077,7 +1197,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           </div>
         )}
         <section
-          className={`mail-surface ${active ? "reading" : ""}`}
+          className={`mail-surface ${active ? "reading" : ""} ${preferences.preview_pane === "off" ? "preview-off" : ""}`}
           aria-label="Mail workspace"
         >
           <section className="message-list" aria-label="Message list">
@@ -1259,9 +1379,8 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                             <Paperclip size={13} />
                           )}
                         </span>
-                        <span className="message-preview">
-                          {m.preview || m.text_body}
-                        </span>
+                        {preferences.show_message_preview && <span className="message-preview">{m.preview || m.text_body}</span>}
+                        <span className="message-labels">{m.is_pinned && <Pin size={11} aria-label="Pinned" />}{m.priority === "high" && <span className="priority-marker">Important</span>}{workspace.data.links.filter(link => link.message_id === m.id).map(link => { const label = workspace.data.labels.find(label => label.id === link.label_id); return label && <span key={label.id} className="message-label" style={{ borderColor: label.color }}>{label.name}</span>; })}</span>
                       </span>
                       {!m.is_read && <span className="unread-dot" />}
                     </button>
@@ -1420,11 +1539,22 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 </div>
               </div>
               <div className="reader-scroll">
+                <div className="reader-extra-tools">
+                  <button className="text-button" onClick={() => setLabelPicker(!labelPicker)}><Tag size={14} />Labels</button>
+                  <button className="text-button" onClick={() => setSnoozePicker(!snoozePicker)} disabled={message.folder === "scheduled"}><Clock size={14} />Snooze</button>
+                  <button className="text-button" disabled={mutationBusy} onClick={() => void patch([message.id], { is_pinned: !message.is_pinned })}><Pin size={14} />{message.is_pinned ? "Unpin" : "Pin"}</button>
+                  <button className="text-button" disabled={mutationBusy} onClick={() => void patch([message.id], { priority: message.priority === "high" ? "normal" : "high" })}>{message.priority === "high" ? "Remove importance" : "Mark important"}</button>
+                  {message.folder !== "spam" && <button className="text-button" disabled={mutationBusy || message.folder === "scheduled"} onClick={() => void patch([message.id], { folder: "spam" })}>Report spam</button>}
+                  {["trash", "spam"].includes(message.folder) && <button className="text-button" disabled={mutationBusy} onClick={() => void permanentDelete()}>Delete forever</button>}
+                </div>
+                {labelPicker && <div className="reader-picker" aria-label="Message labels">{workspace.data.labels.length ? workspace.data.labels.map(label => <label className="check-label" key={label.id}><input type="checkbox" checked={workspace.data.links.some(link => link.message_id === message.id && link.label_id === label.id)} disabled={mutationBusy} onChange={async event => { const old = workspace.data.links.filter(link => link.message_id === message.id).map(link => link.label_id); setMutationBusy(true); try { await workspace.setLabels(message.id, event.target.checked ? [...old, label.id] : old.filter(id => id !== label.id)); } catch (e) { setError(errorText(e)); } finally { setMutationBusy(false); } }} /><span className="label-dot" style={{ background: label.color }} />{label.name}</label>) : <p>Create a label in Workspace tools.</p>}<button className="text-button" onClick={() => setTools("labels")}>Manage labels</button></div>}
+                {snoozePicker && <div className="reader-picker"><label>Return to Inbox<input aria-label="Snooze until" type="datetime-local" value={snoozeTime} onChange={event => setSnoozeTime(event.target.value)} /></label><button className="secondary-button" disabled={!snoozeTime || mutationBusy} onClick={async () => { if (new Date(snoozeTime).getTime() <= Date.now()) { setError("Choose a future snooze time."); return; } if (await patch([message.id], { folder: "snoozed", snoozed_until: new Date(snoozeTime).toISOString() })) setSnoozePicker(false); }}>Snooze message</button></div>}
+                {message.folder === "scheduled" && <div className="scheduled-banner" role="status"><span>Scheduled for {message.scheduled_at ? date(message.scheduled_at) : "delivery"}. Cancel before editing.</span><button className="secondary-button" disabled={mutationBusy} onClick={() => void cancelSchedule()}>Cancel scheduled send</button></div>}
                 <div className="reader-subject">
-                  <span className="folder-tag">{folder}</span>
+                  <span className="folder-tag">{folderTitle}</span>
                   <h2>{message.subject || "(No subject)"}</h2>
                 </div>
-                {(message.thread_id
+                {(message.thread_id && preferences.conversation_view
                   ? messages
                       .filter(
                         (m) =>
@@ -1575,8 +1705,9 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           </button>
         </div>
       )}
+      <datalist id="mail-contact-options">{workspace.data.contacts.map(contact => <option key={contact.id} value={contact.email}>{contact.display_name}</option>)}</datalist>
       {composer && (
-        <div className="modal-backdrop">
+        <div className="modal-backdrop" inert={Boolean(tools || assistant)}>
           <form
             className="composer"
             role="dialog"
@@ -1632,6 +1763,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                     autoFocus
                     required
                     placeholder="name@company.com"
+                    list="mail-contact-options"
                     value={composer.to}
                     onChange={(e) =>
                       setComposer({ ...composer, to: e.target.value })
@@ -1681,16 +1813,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                   />
                 </label>
               </div>
-              <textarea
-                ref={bodyRef}
-                aria-label="Message body"
-                className="compose-body"
-                placeholder="A good conversation starts with a hello…"
-                value={composer.text}
-                onChange={(e) =>
-                  setComposer({ ...composer, text: e.target.value })
-                }
-              />
+              <RichEditor key={composer.id || "compose"} textareaRef={bodyRef} text={composer.text} html={composer.html} disabled={sending} onChange={(text, html) => setComposer(previous => previous ? { ...previous, text, html } : null)} />
               {files.length > 0 && (
                 <div className="compose-files">
                   {files.map((f, i) => (
@@ -1712,23 +1835,30 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 </div>
               )}
             </fieldset>
+            {composer.deliveryUnconfirmed && <div className="compose-error" role="alert">Check the provider delivery status before retrying. The original files are kept in a draft. <button type="button" className="text-button" onClick={() => { if (window.confirm("Have you confirmed this email was not delivered or scheduled?")) setComposer({ ...composer, deliveryUnconfirmed: false }); }}>I checked delivery; allow retry</button></div>}
             {(error || recovery.storageError) && (
               <div className="compose-error" role="alert">
                 {error || recovery.storageError}
               </div>
             )}
+            {insertMenu && <div className="composer-inserts">
+              <label>Contact<select disabled={sending} aria-label="Insert contact" defaultValue="" onChange={event => { if (event.target.value) setComposer({ ...composer, to: recipients([composer.to, event.target.value]).join(", ") }); event.target.value = ""; }}><option value="">Choose contact…</option>{workspace.data.contacts.map(contact => <option key={contact.id} value={contact.email}>{contact.display_name || contact.email} · {contact.email}</option>)}</select></label>
+              <label>Template (replaces message)<select disabled={sending} aria-label="Insert template" defaultValue="" onChange={event => { const template = workspace.data.templates.find(t => t.id === event.target.value); if (template) setComposer({ ...composer, subject: template.subject || composer.subject, text: template.text_body || htmlText(template.html_body || ""), html: template.html_body ? sanitizeComposeHtml(template.html_body) : undefined }); event.target.value = ""; }}><option value="">Choose template…</option>{workspace.data.templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
+              <label>Saved signature<select disabled={sending} aria-label="Insert saved signature" defaultValue="" onChange={event => { const signature = workspace.data.signatures.find(t => t.id === event.target.value); if (signature) setComposer({ ...composer, text: `${composer.text}\n\n${htmlText(signature.html_body)}`, html: `${sanitizeComposeHtml(composer.html || plainHtml(composer.text))}<br><br>${sanitizeComposeHtml(signature.html_body)}` }); event.target.value = ""; }}><option value="">Choose signature…</option>{workspace.data.signatures.filter(signature => !signature.account_id || accounts.find(a => a.address === composer.fromAddress)?.id === signature.account_id).map(signature => <option key={signature.id} value={signature.id}>{signature.name}</option>)}</select></label>
+            </div>}
+            {scheduleVisible && <div className="schedule-entry"><label>Deliver at (your local time)<input disabled={sending} aria-label="Scheduled delivery time" type="datetime-local" value={composer.scheduledAt ? instantToLocal(composer.scheduledAt, Intl.DateTimeFormat().resolvedOptions().timeZone) : ""} onChange={event => setComposer({ ...composer, scheduledAt: event.target.value ? new Date(event.target.value).toISOString() : undefined })} /></label><button type="button" className="text-button" disabled={sending} onClick={() => { setComposer({ ...composer, scheduledAt: undefined }); setScheduleVisible(false); }}>Send immediately instead</button></div>}
             <div className="composer-footer">
               <button
                 className="primary-button"
                 type="submit"
-                disabled={sending || !accounts.length}
+                disabled={sending || !accounts.length || Boolean(composer.deliveryUnconfirmed)}
               >
                 {sending ? (
                   <LoaderCircle size={16} className="spin" />
                 ) : (
                   <Send size={16} />
                 )}
-                {sending ? "Sending…" : demo ? "Send in demo" : "Send message"}
+                {sending ? "Sending…" : composer.scheduledAt ? demo ? "Schedule in demo" : "Schedule message" : demo ? "Send in demo" : "Send message"}
               </button>
               <button
                 type="button"
@@ -1747,6 +1877,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 title={signature ? "Insert signature" : "Add a signature in Settings"}
                 disabled={sending || !signature.trim()}
                 onClick={() => {
+                  if (composer.html) { setComposer({ ...composer, text: `${composer.text}\n\n${signature}`, html: `${sanitizeComposeHtml(composer.html)}<br><br>${plainHtml(signature)}` }); return; }
                   const field = bodyRef.current;
                   if (!field) return;
                   const start = field.selectionStart;
@@ -1763,6 +1894,9 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
               >
                 <PenLine size={18} />
               </button>
+              <button type="button" className="icon-button" aria-label="Insert saved content" title="Contacts, templates and signatures" disabled={sending} onClick={() => setInsertMenu(!insertMenu)}><FileText size={18} /></button>
+              <button type="button" className="icon-button" aria-label="Writing assistant" disabled={sending || !preferences.ai_enabled} onClick={() => setAssistant(true)}><Sparkles size={18} /></button>
+              <button type="button" className="icon-button" aria-label="Schedule delivery" disabled={sending} onClick={() => setScheduleVisible(!scheduleVisible)}><Clock size={18} /></button>
               <input
                 type="file"
                 multiple
@@ -1796,7 +1930,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         </div>
       )}
       {settings && (
-        <div className="modal-backdrop">
+        <div className="modal-backdrop" inert={Boolean(tools || assistant)}>
           <section
             className="settings-modal"
             role="dialog"
@@ -1826,7 +1960,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 role="switch"
                 aria-checked={dark}
                 aria-label="Dark appearance"
-                onClick={() => setDark(!dark)}
+                onClick={() => { setDark(!dark); void workspace.savePreferences({ theme: dark ? "light" : "dark" }).catch(e => setError(errorText(e))); }}
               >
                 <span />
               </button>
@@ -1841,7 +1975,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 role="switch"
                 aria-checked={compact}
                 aria-label="Compact message list"
-                onClick={() => setCompact(!compact)}
+                onClick={() => { setCompact(!compact); void workspace.savePreferences({ density: compact ? "comfortable" : "compact" }).catch(e => setError(errorText(e))); }}
               >
                 <span />
               </button>
@@ -1860,10 +1994,17 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
             {signatures.ready && accounts.length > 0 && (
               <SignatureSettings key={demo ? "demo" : session?.user.id} accounts={accounts} {...signatures} />
             )}
+            {workspace.ready && <AdvancedSettings key={demo ? "demo" : session?.user.id} workspace={workspace} accounts={accounts} demo={demo} push={push} onAccounts={setAccounts} />}
+            <div className="tools-actions settings-tools-links"><button className="secondary-button" onClick={() => { setSettings(false); setTools("signatures"); }}>Saved signatures</button><button className="secondary-button" onClick={() => { setSettings(false); setTools("filters"); }}>Labels, filters & templates</button></div>
             {demo ? (
               <button
                 className="secondary-button"
                 onClick={() => {
+                  localStorage.removeItem("frankiflow-demo-tools-v2");
+                  localStorage.removeItem("frankiflow-demo-account-names-v2");
+                  setAccounts(demoAccounts);
+                  rulesProcessed.current.clear();
+                  void workspace.refresh();
                   setMessages(demoMessages());
                   setActive(null);
                   changeFolder("inbox");
@@ -1877,6 +2018,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
               <button
                 className="secondary-button"
                 onClick={async () => {
+                  try { await push.disable(); } catch { /* Local subscription is still invalidated before sign-out. */ }
                   const { error } = await getSupabase().auth.signOut();
                   if (error) setError(error.message);
                   else {
@@ -1904,6 +2046,8 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           </section>
         </div>
       )}
+      {tools && <WorkspaceTools workspace={workspace} accounts={accounts} initialTab={tools} onClose={() => setTools(null)} onCompose={seed => newMessage(seed)} onInvite={prepareInvitation} onApplyFilters={() => applyFilters(true)} />}
+      {assistant && composer && <WritingAssistant composer={composer} preferences={preferences} demo={demo} onClose={() => setAssistant(false)} onApply={(text, html, subject) => setComposer(previous => previous ? { ...previous, text, html, subject } : null)} />}
     </div>
   );
 }
@@ -2083,6 +2227,12 @@ function Attachments({
       cancelled = true;
     };
   }, [message.id, message.attachments, demo, cache, retry]);
+  async function recover() {
+    setBusy(true); setError("");
+    try { await invokeMail("send-mail", { action: "repair-attachments", message_id: message.id }); cache.delete(message.id); setRetry(n => n + 1); }
+    catch (e) { setError(errorText(e)); }
+    finally { setBusy(false); }
+  }
   async function download(item: Attachment) {
     setError("");
     try {
@@ -2128,6 +2278,8 @@ function Attachments({
             <p className="attachment-status">
               This message indicates attachments, but no stored files were
               returned. They may not have been saved by the mail service.
+              {!demo && message.direction === "outbound" && <button className="text-button" onClick={() => void recover()}>Recover original attachments</button>}
+              <button className="text-button" onClick={() => setRetry(n => n + 1)}>Retry attachments</button>
             </p>
           )}
           {items.map((item) => (

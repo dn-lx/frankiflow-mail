@@ -23,6 +23,10 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno check --node-modules-dir=none supabase/functions/{send-mail,mail-v2-actions,mail-ai,mail-account-settings,mail-push}/index.ts
       - run: npm test
       - run: npm run build
         env:
@@ -43,14 +47,18 @@ jobs:
           npm run test:e2e
           npm run test:contract
           npm run test:improvements
+          npm run test:workspace
+          npm run test:pwa
       - name: Test deployed branch
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.deployment_url != '' }}
         env:
           BASE_URL: ${{ inputs.deployment_url }}
         run: |
-          node -e 'const u=new URL(process.env.BASE_URL); if(u.protocol!=="https:" || u.hostname!=="v2--frankiflow-mail.netlify.app" || u.username || u.password) throw new Error("Expected the v2 Netlify HTTPS branch URL")'
+          node -e 'const u=new URL(process.env.BASE_URL); if(u.protocol!=="https:" || !["v2--frankiholz.netlify.app","v2--frankiflow-mail.netlify.app"].includes(u.hostname) || u.username || u.password) throw new Error("Expected the v2 Netlify HTTPS branch URL")'
           npm run test:e2e
           npm run test:improvements
+          npm run test:workspace
+          npm run test:pwa
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -30,7 +30,7 @@ try {
   await page.goto(`${base}/demo`);
   await page.getByRole("button", { name: "New message", exact: false }).click();
   await page
-    .getByRole("textbox", { name: "To", exact: true })
+    .getByRole("combobox", { name: "To", exact: true })
     .fill('"Wilson, Emma" <emma@example.com>');
   await page.getByRole("button", { name: "Cc / Bcc", exact: true }).click();
   await page
@@ -59,7 +59,7 @@ try {
     .getByRole("button", { name: "Resume draft", exact: false })
     .click();
   assert.equal(
-    await page.getByRole("textbox", { name: "To", exact: true }).inputValue(),
+    await page.getByRole("combobox", { name: "To", exact: true }).inputValue(),
     '"Wilson, Emma" <emma@example.com>',
   );
   assert.equal(
@@ -97,7 +97,7 @@ try {
     .getByRole("button", { name: "Forward with attachments", exact: true })
     .click();
   await page
-    .getByRole("textbox", { name: "To", exact: true })
+    .getByRole("combobox", { name: "To", exact: true })
     .fill("forward@example.com");
   await page
     .getByRole("button", { name: "Remove recovered.bin", exact: true })
@@ -113,7 +113,7 @@ try {
 
   await page.getByRole("button", { name: "New message", exact: false }).click();
   await page
-    .getByRole("textbox", { name: "To", exact: true })
+    .getByRole("combobox", { name: "To", exact: true })
     .fill("draft@example.com");
   await page.getByRole("button", { name: "Cc / Bcc", exact: true }).click();
   await page
@@ -183,7 +183,7 @@ try {
   await row("A fresh direction").click();
   await page.getByRole("button", { name: "Reply all", exact: true }).click();
   assert.equal(
-    await page.getByRole("textbox", { name: "To", exact: true }).inputValue(),
+    await page.getByRole("combobox", { name: "To", exact: true }).inputValue(),
     "emma@example.com",
   );
   if (!(await page.getByRole("textbox", { name: "Cc", exact: true }).count()))

@@ -1,3 +1,4 @@
+/** @param {string | string[] | null | undefined} value */
 export function recipients(value = "") {
   const values = Array.isArray(value) ? value : [value];
   const result = [],
@@ -31,7 +32,7 @@ export function filterMessages(messages, folder, query = "", unread = false) {
       if (
         folder === "starred"
           ? !m.is_starred || ["trash", "spam"].includes(m.folder)
-          : m.folder !== folder
+          : folder === "all" ? ["trash", "spam"].includes(m.folder) : m.folder !== folder
       )
         return false;
       if (unread && m.is_read) return false;
@@ -42,8 +43,10 @@ export function filterMessages(messages, folder, query = "", unread = false) {
         if (token === "is:unread") return !m.is_read;
         if (token === "is:read") return m.is_read;
         if (token === "is:starred") return m.is_starred;
+        if (token === "is:important") return m.priority === "high";
         if (token === "has:attachment")
           return m.has_attachments || m.attachments?.length > 0;
+        if (token.startsWith("label:")) return (m.label_names || []).some(name => name.toLowerCase().includes(token.slice(6)));
         if (token.startsWith("from:")) return from.includes(token.slice(5));
         if (token.startsWith("to:")) return to.includes(token.slice(3));
         if (token.startsWith("subject:"))
@@ -58,9 +61,10 @@ export function filterMessages(messages, folder, query = "", unread = false) {
           .includes(token);
       });
     })
-    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    .sort((a, b) => Number(Boolean(b.is_pinned)) - Number(Boolean(a.is_pinned)) || Date.parse(b.created_at) - Date.parse(a.created_at));
 }
 export function validateFiles(files) {
+  if (files.length > 14) return "Attach at most 14 files, including inline images.";
   if (files.some((f) => f.size > 8 * 1024 * 1024))
     return "Each attachment must be 8 MB or smaller.";
   if (files.reduce((n, f) => n + f.size, 0) > 18 * 1024 * 1024)

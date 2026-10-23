@@ -5,6 +5,7 @@ const config: NextConfig = {
   agentRules: false,
   async headers() {
     return [
+      { source: "/sw-v2.js", headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }] },
       {
         source: "/:path*",
         headers: [

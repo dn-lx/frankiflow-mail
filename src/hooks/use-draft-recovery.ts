@@ -15,6 +15,7 @@ function meaningful(compose: Compose, files: File[]) {
     compose.bcc.trim() ||
     compose.subject.trim() ||
     compose.text.trim() ||
+    compose.html?.trim() ||
     files.length,
   );
 }
@@ -29,8 +30,9 @@ function transact<T>(
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
       const db = request.result;
-      const tx = db.transaction("drafts", mode);
-      const result = action(tx.objectStore("drafts"));
+      let tx: IDBTransaction, result: IDBRequest<T>;
+      try { tx = db.transaction("drafts", mode); result = action(tx.objectStore("drafts")); }
+      catch (error) { db.close(); reject(error); return; }
       tx.oncomplete = () => {
         db.close();
         resolve(result.result);
