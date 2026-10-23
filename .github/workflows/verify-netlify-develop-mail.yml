@@ -44,7 +44,7 @@ jobs:
           ! grep -q 'data-create-mail-user' assets/account-security.js
           ! grep -q 'mail-user-list' assets/account-security.js
           grep -q 'settings-cleanup.js' index.html
-          grep -q 'frankiflow-mail-dev-v20' sw.js
+          grep -q 'frankiflow-mail-dev-v21' sw.js
           grep -Fq '@media (min-width:821px)' assets/settings-cleanup.css
           grep -Fq 'position:fixed!important' assets/settings-cleanup.css
           grep -Fq 'account-actions{display:flex!important}' assets/settings-cleanup.css

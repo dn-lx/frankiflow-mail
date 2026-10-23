@@ -40,3 +40,5 @@ body[data-density="compact"]{--row-h:60px}.filter-hint{font-size:10px;color:var(
 .ff-attachment-block[role="alert"] .ff-attachment-title,.ff-attachment-meta small[role="alert"]:not(:empty){color:var(--danger,#b34c39);text-transform:none;letter-spacing:normal;white-space:normal}
 .ff-attachment-meta small[role="alert"]:empty{display:none}
 .ff-attachment-actions button:disabled{opacity:.5;cursor:wait}
+
+.ff-attachment-missing .ff-attachment-title {text-transform:none;letter-spacing:normal;line-height:1.6;font-weight:500}

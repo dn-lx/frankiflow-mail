@@ -157,6 +157,15 @@ try {
   pass(
     "messages claiming attachments without stored files display a diagnostic instead of silently hiding them",
   );
+  const sendsBeforeRecovery = await page.evaluate(() => window.__mailTest.payloads.length);
+  await page.evaluate(() => { window.__mailTest.failRecovery = true; });
+  await sentCard().getByRole("button", { name: "Recover sent attachments", exact: true }).click();
+  await sentCard().getByText(/Provider recovery unavailable/).waitFor();
+  await page.evaluate(() => { window.__mailTest.failRecovery = false; });
+  await sentCard().getByRole("button", { name: "Recover sent attachments", exact: true }).click();
+  await sentCard().getByRole("button", { name: "Download sent-receipt.txt", exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => window.__mailTest.payloads.length), sendsBeforeRecovery);
+  pass("missing sent files can be recovered with visible retry errors and no duplicate email delivery");
   await compose("Binary file preparation failure");
   const bytes = Buffer.from([0, 255, 1, 254, 128, 195, 188]);
   await page

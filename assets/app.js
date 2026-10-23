@@ -463,7 +463,8 @@ function todayAt(h){const d=new Date();d.setHours(h,0,0,0);if(d<=new Date())d.se
 function openSchedulePicker(){closePopover();const d=new Date(Date.now()+3600e3);const local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);openModal('Schedule send',`<div class="field"><label>Send date and time</label><input id="scheduleAt" type="datetime-local" value="${local}" min="${new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16)}"></div>`,async modal=>{const v=modal.querySelector('#scheduleAt').value;if(!v)return;modal.closest('.modal-backdrop').remove();await sendComposer(new Date(v).toISOString());});}
 
 async function sendMail(payload){
-  try{const {data,error}=await supabase.functions.invoke('send-mail',{body:{...payload,to:splitAddr(payload.to),cc:splitAddr(payload.cc),bcc:splitAddr(payload.bcc)}});if(error)throw error;if(data?.error)throw new Error(data.error);}
+  let deliveryWarning='';
+  try{const {data,error}=await supabase.functions.invoke('send-mail',{body:{...payload,to:splitAddr(payload.to),cc:splitAddr(payload.cc),bcc:splitAddr(payload.bcc)}});if(error)throw error;if(data?.error)throw new Error(data.error);deliveryWarning=data?.warning||'';}
   catch(error){toast(`Send failed: ${error.message}`,'error');return false;}
   toast(payload.scheduledAt?'Email scheduled':'Email sent',payload.scheduledAt?'schedule':'send');
   const warnings=[];
@@ -471,6 +472,7 @@ async function sendMail(payload){
   try{await rememberContacts(splitAddr(payload.to));}catch{warnings.push('contacts could not be updated');}
   try{if(await loadAll()===false)warnings.push('the mailbox could not be refreshed');}catch{warnings.push('the mailbox could not be refreshed');}
   if(warnings.length)toast(`Email ${payload.scheduledAt?'scheduled':'sent'}, but ${warnings.join(' and ')}. Do not resend it.`,'warning');
+  if(deliveryWarning)toast(deliveryWarning,'warning');
   return true;
 }
 

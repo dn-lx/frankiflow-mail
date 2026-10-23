@@ -1,7 +1,7 @@
 name: Classic mail attachment regression
 on:
   push:
-    branches: [fix/sent-attachments, develop, main]
+    branches: [fix/sent-attachments, fix/sent-attachment-storage, develop, main]
   pull_request:
     branches: [develop, main]
   workflow_dispatch:
@@ -24,6 +24,8 @@ jobs:
           node --check sw.js
           node --check tests/classic-client.js
           git diff --check
+      - name: Mail backend regression tests
+        run: node --test tests/send-mail.test.mjs
       - name: Install isolated browser test dependencies
         run: |
           npm install --prefix /tmp/frankiflow-mail-tests --no-package-lock --no-audit --no-fund playwright@1.64.1
