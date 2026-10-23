@@ -6,3 +6,5 @@ out/
 *.tsbuildinfo
 test-results/
 next-env.d.ts
+
+.netlify/

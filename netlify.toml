@@ -8,3 +8,6 @@
 
 [context.v2]
   command = "npm run build"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
