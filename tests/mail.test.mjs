@@ -166,3 +166,17 @@ test("search supports quoted subject phrases, read status and date boundaries", 
   );
   assert.equal(filterMessages([mail], "sent", "before:2026-10-01").length, 0);
 });
+
+test("empty files fail before provider submission while small binary files remain valid", () => {
+  assert.match(validateFiles([{ size: 0 }]), /empty/i);
+  assert.equal(validateFiles([{ size: 1 }]), "");
+  assert.equal(validateFiles([{ size: 8 * 1024 * 1024 }]), "");
+});
+
+test("SDK errors retain useful messages without exposing generic object serialization", async () => {
+  const { errorText } = await import("../src/lib/mail-utils.mjs");
+  assert.equal(errorText({ message: "Permission denied", code: "42501" }), "Permission denied");
+  assert.equal(errorText(new Error("Upload interrupted")), "Upload interrupted");
+  assert.equal(errorText("Offline"), "Offline");
+  assert.match(errorText(null), /try again/i);
+});

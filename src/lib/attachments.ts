@@ -40,7 +40,7 @@ export async function attachmentFiles(
       "The original files are unavailable. Forwarding has been stopped so attachments are not silently omitted.",
     );
   const metadataError = validateFiles(
-    items.map((item) => ({ size: item.size_bytes || 0 })),
+    items.map((item) => ({ size: item.size_bytes > 0 ? item.size_bytes : 1 })),
   );
   if (metadataError) throw new Error(metadataError);
   const files: File[] = [];
@@ -59,6 +59,7 @@ export async function attachmentFiles(
       if (error) throw error;
       blob = data;
     }
+    if (item.size_bytes > 0 && blob.size !== item.size_bytes) throw new Error(`The attachment ${item.filename} could not be downloaded completely. Try again before forwarding.`);
     files.push(
       new File([blob], item.filename, {
         type: item.content_type || blob.type || "application/octet-stream",

@@ -3,10 +3,11 @@
   --surface: #fff;
   --sidebar: #f2f6f4;
   --text: #253b36;
-  --muted: #84908c;
+  --muted: #5c6d65;
   --border: #e8eeeb;
-  --accent: #287a65;
+  --accent: #24705c;
   --accent-soft: #e5f2eb;
+  --star: #946a2f;
   --hover: #f5f8f6;
   --shadow: 0 16px 60px #1b483214;
   color-scheme: light;
@@ -20,6 +21,7 @@
   --border: #33463a;
   --accent: #8bd5ad;
   --accent-soft: #2a4536;
+  --star: #e7bd6c;
   --hover: #293b2f;
   --shadow: 0 16px 60px #0004;
   color-scheme: dark;
@@ -608,14 +610,14 @@ kbd {
   padding-left: 9px;
 }
 .star-button {
-  color: #c5ceca;
+  color: var(--muted);
   display: grid;
   place-items: center;
   padding: 0;
 }
 .star-button.starred,
 .starred {
-  color: #c2a05c;
+  color: var(--star);
 }
 .row-content {
   display: flex;
@@ -633,23 +635,23 @@ kbd {
 }
 .tone-0 {
   background: #e9eee4;
-  color: #708164;
+  color: #53614b;
 }
 .tone-1 {
   background: #ede9e3;
-  color: #9b8167;
+  color: #735e49;
 }
 .tone-2 {
   background: #e9e9f2;
-  color: #8880a8;
+  color: #65597e;
 }
 .tone-3 {
   background: #e4edf0;
-  color: #688c99;
+  color: #476976;
 }
 .tone-4 {
   background: #f3e5e2;
-  color: #b28477;
+  color: #7e5448;
 }
 .message-text {
   min-width: 0;
@@ -2088,3 +2090,5 @@ kbd {
   .format-toolbar { padding: 7px 12px; }
   .reader-extra-tools { gap: 13px; }
 }
+
+.profile > .avatar { color: #535f50; }

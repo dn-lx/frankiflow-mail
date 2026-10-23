@@ -117,3 +117,9 @@ export function demoMessages(): Message[] {
       : [],
   }));
 }
+
+export function parseDemoMessages(raw: string): Message[] {
+  const data: unknown = JSON.parse(raw);
+  if (!Array.isArray(data) || !data.every(m => m && typeof m === "object" && typeof m.id === "string" && typeof m.folder === "string" && typeof m.from_address === "string" && Array.isArray(m.to_addresses) && m.to_addresses.every((address: unknown) => typeof address === "string") && typeof m.subject === "string" && typeof m.text_body === "string" && Number.isFinite(Date.parse(m.created_at)))) throw new Error("Saved sample mailbox is invalid.");
+  return data;
+}

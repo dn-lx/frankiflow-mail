@@ -64,6 +64,7 @@ export function filterMessages(messages, folder, query = "", unread = false) {
     .sort((a, b) => Number(Boolean(b.is_pinned)) - Number(Boolean(a.is_pinned)) || Date.parse(b.created_at) - Date.parse(a.created_at));
 }
 export function validateFiles(files) {
+  if (files.some(f => f.size === 0)) return "Empty files cannot be attached. Choose a file with content.";
   if (files.length > 14) return "Attach at most 14 files, including inline images.";
   if (files.some((f) => f.size > 8 * 1024 * 1024))
     return "Each attachment must be 8 MB or smaller.";
@@ -116,4 +117,11 @@ export function fromAddressForMessage(message, accounts) {
     accounts[0]?.address ||
     ""
   );
+}
+
+/** Read useful errors from SDK objects as well as native exceptions. */
+export function errorText(error) {
+  if (typeof error === "string" && error) return error;
+  if (error && typeof error === "object" && typeof error.message === "string" && error.message) return error.message;
+  return "Something went wrong. Please try again.";
 }

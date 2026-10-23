@@ -1,4 +1,5 @@
 "use client";
+import { errorText } from "@/lib/mail-utils.mjs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { emptyWorkspace, sampleWorkspace, resourceTables, type Resource, type Entry, type Preferences, type WorkspaceData } from "@/lib/workspace";
@@ -58,12 +59,12 @@ export function useWorkspace(demo: boolean, userId: string | undefined) {
       }
       if (!["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash"].includes(next.preferences.ai_model)) next.preferences.ai_model = emptyWorkspace().preferences.ai_model;
       if (generation.current === version) { value.current = next; setData(next); setLoaded(scope); }
-    } catch (e) { if (generation.current === version) { setError(e instanceof Error ? e.message : String(e)); setLoaded(scope); } }
+    } catch (e) { if (generation.current === version) { setError(errorText(e)); setLoaded(scope); } }
     finally { if (generation.current === version) setLoading(false); }
   }, [scope, demo, userId]);
   useEffect(() => { setData(emptyWorkspace()); setLoaded(null); void refresh(); return () => { generation.current++; }; }, [refresh]);
   async function save(kind: Resource, patch: Record<string, any>) {
-    if (!scope || loaded !== scope) throw new Error("Workspace is still loading.");
+    if (!scope || current.current !== scope || loaded !== scope || loading || error) throw new Error("Workspace data is unavailable. Retry loading before saving changes.");
     const owner = scope;
     const id = patch.id || crypto.randomUUID();
     let row: Entry = { ...patch, id };
@@ -85,6 +86,7 @@ export function useWorkspace(demo: boolean, userId: string | undefined) {
     return row;
   }
   async function remove(kind: Resource, id: string) {
+    if (!scope || current.current !== scope || loaded !== scope || loading || error) throw new Error("Workspace data is unavailable. Retry loading before saving changes.");
     const owner = scope;
     if (!demo) { const result = await getSupabase().from(resourceTables[kind]).delete().eq("id", id); if (result.error) throw result.error; }
     if (current.current !== owner) return;
@@ -93,6 +95,7 @@ export function useWorkspace(demo: boolean, userId: string | undefined) {
     commit(next);
   }
   async function savePreferences(patch: Partial<Preferences>) {
+    if (!scope || current.current !== scope || loaded !== scope || loading || error) throw new Error("Workspace data is unavailable. Retry loading before saving changes.");
     const owner = scope;
     if (!demo) {
       const result = await getSupabase().from("frankiflow_mail_settings").upsert({ user_id: userId, ...patch, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
@@ -102,6 +105,7 @@ export function useWorkspace(demo: boolean, userId: string | undefined) {
     commit({ ...value.current, preferences: { ...value.current.preferences, ...patch } });
   }
   async function setLabels(messageId: string, ids: string[]) {
+    if (!scope || current.current !== scope || loaded !== scope || loading || error) throw new Error("Workspace data is unavailable. Retry loading before saving changes.");
     const owner = scope;
     const previous = value.current.links.filter(x => x.message_id === messageId);
     const additions = ids.filter(id => !previous.some(link => link.label_id === id));
@@ -114,6 +118,6 @@ export function useWorkspace(demo: boolean, userId: string | undefined) {
     const next = { ...value.current, links: [...value.current.links.filter(x => x.message_id !== messageId), ...ids.map(label_id => ({ message_id: messageId, label_id }))] };
     commit(next);
   }
-  return { data: loaded === scope ? data : emptyWorkspace(), ready: loaded === scope, loading, error, refresh, save, remove, savePreferences, setLabels };
+  return { data: loaded === scope ? data : emptyWorkspace(), ready: loaded === scope && !loading && !error, loading, error, refresh, save, remove, savePreferences, setLabels };
 }
 export type WorkspaceController = ReturnType<typeof useWorkspace>;

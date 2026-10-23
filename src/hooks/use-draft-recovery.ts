@@ -66,6 +66,7 @@ export function useDraftRecovery(
   const revision = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const key = scope ? `compose:${scope}` : null;
+  const activeKey = useRef(key); activeKey.current = key;
 
   useEffect(() => {
     let current = true;
@@ -110,28 +111,28 @@ export function useDraftRecovery(
   const save = useCallback(
     async (data: Compose, dataFiles: File[]) => {
       if (!key || !meaningful(data, dataFiles)) return;
-      clearTimeout(timer.current);
-      const ownRevision = ++revision.current;
+      if (activeKey.current === key) clearTimeout(timer.current);
+      const ownRevision = activeKey.current === key ? ++revision.current : -1;
       const snapshot: Snapshot = {
         key,
         compose: data,
         files: dataFiles,
         updatedAt: new Date().toISOString(),
       };
-      setStatus("saving");
+      if (activeKey.current === key) setStatus("saving");
       const task = chain.current
         .catch(() => {})
         .then(() => transact("readwrite", (store) => store.put(snapshot)));
       chain.current = task;
       try {
         await task;
-        if (revision.current === ownRevision) {
+        if (activeKey.current === key && revision.current === ownRevision) {
           setSaved(snapshot);
           setStatus("saved");
           setStorageError("");
         }
       } catch (error) {
-        if (revision.current === ownRevision) {
+        if (activeKey.current === key && revision.current === ownRevision) {
           setStatus("error");
           setStorageError(
             "Your draft could not be saved on this device. Keep the composer open to avoid losing it.",
@@ -144,11 +145,10 @@ export function useDraftRecovery(
   );
 
   const clear = useCallback(async () => {
-    clearTimeout(timer.current);
-    revision.current++;
-    setSaved(null);
-    setStatus("idle");
-    setStorageError("");
+    if (activeKey.current === key) {
+      clearTimeout(timer.current);
+      revision.current++; setSaved(null); setStatus("idle"); setStorageError("");
+    }
     if (!key) return;
     try {
       localStorage.setItem(`draft-cleared:${key}`, String(Date.now()));

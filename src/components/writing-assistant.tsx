@@ -1,4 +1,5 @@
 "use client";
+import { errorText } from "@/lib/mail-utils.mjs";
 import { useCallback, useState } from "react";
 import { WorkspaceModal } from "./workspace-modal";
 import { invokeMail } from "@/hooks/use-workspace";
@@ -17,7 +18,7 @@ export function WritingAssistant({ composer, preferences, demo, onApply, onClose
       const response = await invokeMail("mail-ai", { action, prompt, subject: composer.subject, text: composer.text, model: preferences.ai_model, tone: preferences.ai_tone, language: preferences.ai_language });
       if (typeof response?.html !== "string") throw new Error("The assistant returned no message suggestion.");
       const html = sanitizeComposeHtml(response.html); setResult({ html, text: htmlText(html), subject: String(response.subject || composer.subject) });
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+    } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   }}>{busy ? "Writing…" : "Create suggestion"}</button>{demo && <p>Sign in to use the writing assistant with your mailbox.</p>}{!preferences.ai_enabled && <p>Enable the writing assistant in workspace preferences.</p>}{error && <p className="form-error" role="alert">{error}</p>}
   {result && <div className="assistant-result"><strong>{result.subject}</strong><div className="email-body">{result.text}</div><button className="primary-button" onClick={() => { onApply(result.text, result.html, result.subject); onClose(); }}>Insert suggestion</button></div>}</div></WorkspaceModal>;
 }

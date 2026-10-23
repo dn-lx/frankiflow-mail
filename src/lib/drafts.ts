@@ -7,7 +7,7 @@ export async function saveServerDraft(compose: Compose, files: File[], accounts:
   const account = accounts.find(a => a.address === compose.fromAddress);
   if (!account) throw new Error("Choose an authorized sender account.");
   const id = crypto.randomUUID(); const client = getSupabase();
-  const row = { id, account_id: account.id, thread_id: compose.thread_id || null, direction: "draft", folder: "drafts", from_address: account.address,
+  const row = { id, account_id: account.id, thread_id: compose.thread_id || null, in_reply_to: compose.in_reply_to || null, direction: "draft", folder: "drafts", from_address: account.address,
     to_addresses: recipients(compose.to), cc_addresses: recipients(compose.cc), bcc_addresses: recipients(compose.bcc), subject: compose.subject,
     text_body: compose.text, html_body: compose.html || "", preview: compose.text.slice(0, 180), is_read: true, has_attachments: files.length > 0, scheduled_at: compose.scheduledAt || null, updated_at: new Date().toISOString() };
   const paths: string[] = [];

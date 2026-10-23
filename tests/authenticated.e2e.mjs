@@ -54,7 +54,9 @@ const draft = {
 };
 const savedMessages = [], savedFiles = [], storedBytes = new Map();
 const workspaceRows = Object.fromEntries(["contacts", "labels", "templates", "signatures", "filters", "events", "settings", "message_labels"].map(key => [key, []]));
+let sendAttempts = 0;
 let aiPayload, uncertainSend = false;
+let downloadBody = Buffer.from("Contract test");
 let failUpload = false;
 let includeDraft = false,
   failCleanup = false,
@@ -138,12 +140,13 @@ await page.route("https://*.supabase.co/**", async (route) => {
     }
     if (storedBytes.has(path)) return route.fulfill({ status: 200, contentType: "application/octet-stream", body: storedBytes.get(path) });
     if (failDownload) return fulfill({ message: "Original attachment download denied" }, 403);
-    return route.fulfill({ status: 200, contentType: "text/plain", body: "Contract test" });
+    return route.fulfill({ status: 200, contentType: "text/plain", body: downloadBody });
   }
   if (url.pathname.startsWith("/storage/v1/object/sign/")) return failSign
     ? fulfill({ message: "Storage permission denied" }, 403)
     : fulfill({ signedURL: url.pathname.replace("/storage/v1", "") + "?token=sample" });
   if (url.pathname === "/functions/v1/send-mail") {
+    sendAttempts++;
     sentPayload = req.postDataJSON();
     if (uncertainSend) return fulfill({ error: "Provider status is unknown. Check delivery before retrying.", delivery_unconfirmed: true }, 503);
     if (failSend)
@@ -304,6 +307,23 @@ try {
     "PASS reply-all preserves shared sender and thread headers while excluding our aliases and original Bcc",
   );
 
+  await page.locator(".row-content").filter({ hasText: mail.subject }).click();
+  await page.getByRole("button", { name: "Reply all", exact: true }).click();
+  failSend = false;
+  await page.getByRole("textbox", { name: "Message body", exact: true }).fill("A reply saved before delivery");
+  await page.getByRole("button", { name: "Close and save draft", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  assert.equal(savedMessages[0].thread_id, mail.thread_id);
+  assert.equal(savedMessages[0].in_reply_to, mail.provider_message_id);
+  await page.getByRole("navigation", { name: "Mail folders" }).getByRole("button", { name: /^Drafts/ }).click();
+  await page.locator(".row-content").filter({ hasText: `Re: ${mail.subject}` }).click();
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  assert.equal(sentPayload.thread_id, mail.thread_id);
+  assert.equal(sentPayload.in_reply_to, mail.provider_message_id);
+  console.log("PASS saved authenticated reply drafts preserve thread and reply headers when reopened and sent");
+  await page.locator(".row-content").filter({ hasText: mail.subject }).click();
+
   await page
     .getByRole("button", { name: "Forward with attachments", exact: true })
     .click();
@@ -333,6 +353,14 @@ try {
   console.log(
     "PASS authenticated forwarding blocks missing files and preserves downloaded attachment bytes",
   );
+
+  downloadBody = Buffer.from("Bad");
+  await page.locator(".row-content").filter({ hasText: mail.subject }).click();
+  await page.getByRole("button", { name: "Forward with attachments", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "could not be downloaded completely" }).waitFor();
+  assert.equal(await page.getByRole("dialog").count(), 0);
+  downloadBody = Buffer.from("Contract test");
+  console.log("PASS forwarding rejects truncated downloads before opening or sending an incomplete message");
 
   await page.getByRole("button", { name: "New message", exact: false }).click();
   await page
@@ -465,9 +493,11 @@ try {
   await page.getByRole("combobox", { name: "To", exact: true }).fill("uncertain@example.com");
   await page.getByRole("textbox", { name: "Subject", exact: true }).fill("Protect against duplicate delivery");
   uncertainSend = true;
-  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  const attemptsBefore = sendAttempts;
+  await page.getByRole("dialog").evaluate(form => { form.requestSubmit(); form.requestSubmit(); });
   await page.getByRole("dialog").getByRole("alert").filter({ hasText: "Check the provider delivery status before retrying" }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Send message", exact: true }).isDisabled(), true);
+  assert.equal(sendAttempts, attemptsBefore + 1, "Simultaneous submits must reach the provider only once");
   await page.getByRole("button", { name: "Close and save draft", exact: true }).click();
   await page.getByRole("dialog").getByRole("alert").filter({ hasText: "Check delivery status before saving" }).waitFor();
   await page.getByText("Draft saved on this device", { exact: true }).waitFor();

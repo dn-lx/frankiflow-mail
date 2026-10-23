@@ -57,3 +57,8 @@ export function instantToLocal(value, zone = "Europe/Berlin") {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value)).map(x => [x.type, x.value]));
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 }
+
+/** Format event wall time in its declared timezone, independent of the viewer's device. */
+export function eventTime(value, timezone = "Europe/Berlin", allDay = false, locale = undefined) {
+  return new Intl.DateTimeFormat(locale, { timeZone: timezone, dateStyle: "medium", ...(allDay ? {} : { timeStyle: "short" }) }).format(new Date(value));
+}

@@ -11,6 +11,7 @@ export type Message = {
   account_id?: string;
   thread_id?: string;
   reply_to?: string;
+  in_reply_to?: string;
   provider_message_id?: string;
   trashed_at?: string | null;
   from_name: string;

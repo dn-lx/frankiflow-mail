@@ -1,4 +1,5 @@
 "use client";
+import { errorText } from "@/lib/mail-utils.mjs";
 import { useEffect, useState } from "react";
 import type { Account } from "@/lib/types";
 import type { Preferences } from "@/lib/workspace";
@@ -11,9 +12,10 @@ export function AdvancedSettings({ workspace, accounts, demo, push, onAccounts }
   const [form, setForm] = useState<Preferences>(workspace.data.preferences), [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
   useEffect(() => setForm(previous => ({ ...previous, theme: workspace.data.preferences.theme, density: workspace.data.preferences.density })), [workspace.data.preferences.theme, workspace.data.preferences.density]);
   const [names, setNames] = useState(Object.fromEntries(accounts.map(a => [a.address, a.display_name])));
+  useEffect(() => setNames(previous => Object.fromEntries(accounts.map(account => [account.address, previous[account.address] ?? account.display_name]))), [accounts]);
   async function run(action: () => Promise<unknown>, message: string) {
     setBusy(true); setError(""); setNotice("");
-    try { await action(); setNotice(message); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try { await action(); setNotice(message); } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
   const update = (key: keyof Preferences, value: any) => setForm(previous => ({ ...previous, [key]: value }));

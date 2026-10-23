@@ -22,7 +22,7 @@ const row = (subject) =>
 async function download(name) {
   const wait = page.waitForEvent("download");
   await page
-    .getByRole("button", { name: `Download ${name}`, exact: true })
+    .getByRole("button", { name: `Download ${name}` })
     .click();
   return readFile(await (await wait).path());
 }
@@ -77,7 +77,7 @@ try {
     .getByRole("textbox", { name: "Message body" })
     .press("Control+Enter");
   await page
-    .getByRole("button", { name: "Download recovered.bin", exact: true })
+    .getByRole("button", { name: "Download recovered.bin" })
     .waitFor();
   assert.deepEqual(await download("recovered.bin"), bytes);
   await page.reload();
@@ -104,7 +104,7 @@ try {
     .waitFor();
   await page.getByRole("button", { name: "Send in demo", exact: true }).click();
   await page
-    .getByRole("button", { name: "Download recovered.bin", exact: true })
+    .getByRole("button", { name: "Download recovered.bin" })
     .waitFor();
   assert.deepEqual(await download("recovered.bin"), bytes);
   console.log(
@@ -143,7 +143,7 @@ try {
   );
   await page.getByRole("button", { name: "Send in demo", exact: true }).click();
   await page
-    .getByRole("button", { name: "Download draft.bin", exact: true })
+    .getByRole("button", { name: "Download draft.bin" })
     .waitFor();
   assert.deepEqual(await download("draft.bin"), bytes);
   console.log(

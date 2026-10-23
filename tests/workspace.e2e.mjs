@@ -96,12 +96,12 @@ try {
   assert.equal(await page.getByRole("textbox", { name: "Cc", exact: true }).inputValue(), "optional@example.com");
   await page.getByRole("button", { name: "Remove invitation.ics", exact: true }).waitFor();
   await page.getByRole("button", { name: "Send in demo", exact: true }).click();
-  await page.getByRole("button", { name: "Download invitation.ics", exact: true }).waitFor();
+  await page.getByRole("button", { name: /^Download invitation\.ics / }).waitFor();
   await open("Calendar"); meeting = panel().locator(".tool-card").filter({ hasText: "Berlin project review" });
   await meeting.getByText(/sent/).waitFor();
   await meeting.getByRole("button", { name: "Prepare cancellation", exact: true }).click();
   await page.getByRole("button", { name: "Send in demo", exact: true }).click();
-  await page.getByRole("button", { name: "Download invitation.ics", exact: true }).waitFor();
+  await page.getByRole("button", { name: /^Download invitation\.ics / }).waitFor();
   await open("Calendar"); await panel().locator(".tool-card").filter({ hasText: "Berlin project review" }).getByText(/cancelled/).waitFor(); await close();
   console.log("PASS calendar events, recurring ICS invitations and cancellations preserve attendees and Berlin time");
 
@@ -119,7 +119,7 @@ try {
   await row("Scheduled attachment regression").click();
   await page.getByRole("button", { name: "Remove scheduled.bin", exact: true }).waitFor();
   await page.getByRole("button", { name: "Send in demo", exact: true }).click();
-  const binaryWait = page.waitForEvent("download"); await page.getByRole("button", { name: "Download scheduled.bin", exact: true }).click();
+  const binaryWait = page.waitForEvent("download"); await page.getByRole("button", { name: /^Download scheduled\.bin / }).click();
   assert.deepEqual(await readFile(await (await binaryWait).path()), Buffer.from([0,255,128,1]));
   console.log("PASS scheduled messages cancel back to editable drafts without losing attachment bytes");
 

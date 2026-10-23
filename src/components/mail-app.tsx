@@ -46,14 +46,15 @@ import { useWorkspace, invokeMail } from "@/hooks/use-workspace";
 import { usePush } from "@/hooks/use-push";
 import { saveServerDraft, removeDraft } from "@/lib/drafts";
 import { sanitizeComposeHtml, htmlText, plainHtml, inlineFiles } from "@/lib/rich-text";
-import { calendarText, matchesRule, rulePatch, instantToLocal } from "@/lib/organization.mjs";
+import { calendarText, matchesRule, rulePatch, instantToLocal, eventTime } from "@/lib/organization.mjs";
 import type { Resource, Entry } from "@/lib/workspace";
 import { SignatureSettings } from "@/components/signature-settings";
 import { useSignatures } from "@/hooks/use-signatures";
 import { useDraftRecovery } from "@/hooks/use-draft-recovery";
 import { attachmentFiles, encodeFiles, messageText } from "@/lib/attachments";
-import { demoAccounts, demoMessages } from "@/lib/demo";
+import { demoAccounts, demoMessages, parseDemoMessages } from "@/lib/demo";
 import {
+  errorText,
   filterMessages,
   formatBytes,
   recipients,
@@ -91,12 +92,6 @@ const date = (s: string) =>
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(s));
-const errorText = (e: unknown) =>
-  e instanceof Error
-    ? e.message
-    : typeof e === "object" && e && "message" in e
-      ? String(e.message)
-      : "Something went wrong. Please try again.";
 const storageKey = "frankiflow-demo-v2";
 type MoveSnapshot = Pick<Message, "id" | "folder" | "trashed_at" | "snoozed_until">;
 
@@ -116,6 +111,13 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   const preferencesRef = useRef(preferences); preferencesRef.current = preferences;
   const rulesProcessed = useRef(new Set<string>());
   const [messages, setMessages] = useState<Message[]>([]);
+  const [demoLoaded, setDemoLoaded] = useState(false);
+  const latestMessages = useRef(messages); latestMessages.current = messages;
+  function commitDemoMessages(next: Message[]) {
+    try { localStorage.setItem(storageKey, JSON.stringify(next)); }
+    catch { throw new Error("Browser storage is full or unavailable. Your message is still open and its device recovery copy is kept. Free space before retrying."); }
+    latestMessages.current = next; setMessages(next);
+  }
   const [accounts, setAccounts] = useState<Account[]>(demo ? demoAccounts : []);
   const [folder, setFolder] = useState("inbox");
   const [active, setActive] = useState<string | null>(null);
@@ -226,14 +228,18 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       /* Browser storage may be disabled. */
     }
     if (demo) {
-      try {
-        const saved = localStorage.getItem(storageKey);
-        setMessages(saved ? JSON.parse(saved) : demoMessages());
-        const names = JSON.parse(localStorage.getItem("frankiflow-demo-account-names-v2") || "{}");
-        setAccounts(demoAccounts.map(a => ({ ...a, display_name: typeof names[a.address] === "string" ? names[a.address] : a.display_name })));
-      } catch {
+      let saved: string | null = null;
+      try { saved = localStorage.getItem(storageKey); setMessages(saved ? parseDemoMessages(saved) : demoMessages()); }
+      catch {
+        if (saved) try { localStorage.setItem(`${storageKey}-unreadable`, saved); } catch {}
         setMessages(demoMessages());
+        setError("Saved sample data could not be read. A fresh sample mailbox was loaded.");
       }
+      try {
+        const names = JSON.parse(localStorage.getItem("frankiflow-demo-account-names-v2") || "{}");
+        if (names && typeof names === "object") setAccounts(demoAccounts.map(a => ({ ...a, display_name: typeof names[a.address] === "string" ? names[a.address] : a.display_name })));
+      } catch { /* Invalid sender names must not reset saved messages. */ }
+      setDemoLoaded(true);
       return;
     }
     // Supabase callbacks must stay synchronous; fetch outside its auth lock.
@@ -251,6 +257,8 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         setComposer(null);
         setFiles([]);
         setUndo(null);
+        setError(""); setNotice(""); setSettings(false);
+        setLabelPicker(false); setSnoozePicker(false);
         setTools(null); setAssistant(false); rulesProcessed.current.clear();
         setBusy(false);
       }
@@ -336,6 +344,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         "postgres_changes",
         { event: "*", schema: "public", table: "frankiflow_mail_messages" },
         (payload) => {
+          if (session.user.id !== sessionUser.current) return;
           const incoming = payload.new as Message;
           const prefs = preferencesRef.current;
           if (payload.eventType === "INSERT" && incoming.direction === "inbound" && incoming.folder === "inbox") {
@@ -379,7 +388,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     } catch {}
   }, [compact]);
   useEffect(() => {
-    if (!demo || !messages.length) return;
+    if (!demo || !demoLoaded) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(messages));
     } catch {
@@ -387,7 +396,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         "Browser storage is full. Demo changes may not survive a refresh.",
       );
     }
-  }, [messages, demo]);
+  }, [messages, demo, demoLoaded]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(
@@ -402,6 +411,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
 
   function resumeRecovery() {
     if (!recovery.saved) return;
+    setSidebar(false);
     setComposer(recovery.saved.compose);
     setFiles(recovery.saved.files);
     setCcVisible(
@@ -427,6 +437,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       );
       return false;
     }
+    setSidebar(false);
     setFiles(initialFiles);
     setScheduleVisible(Boolean(seed.scheduledAt)); setInsertMenu(false);
     setCcVisible(Boolean(seed.cc || seed.bcc));
@@ -468,6 +479,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   }
   async function forward() {
     if (!message || forwarding) return;
+    const owner = sessionUser.current;
     if (composer || recovery.saved) {
       newMessage();
       return;
@@ -480,6 +492,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         demo,
         attachmentCache.current,
       );
+      if (!demo && owner !== sessionUser.current) return;
       newMessage(
         {
           subject: /^fwd:/i.test(message.subject)
@@ -491,7 +504,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         originalFiles,
       );
     } catch (e) {
-      setError(`Could not forward message: ${errorText(e)}`);
+      if (demo || owner === sessionUser.current) setError(`Could not forward message: ${errorText(e)}`);
     } finally {
       setForwarding(false);
     }
@@ -574,7 +587,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       }
       return true;
     } catch (e) {
-      setError(errorText(e));
+      if (demo || owner === sessionUser.current) setError(errorText(e));
       return false;
     } finally {
       mutationLock.current = false;
@@ -624,7 +637,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         );
       } else setNotice("Move undone.");
     } catch (e) {
-      setError(errorText(e));
+      if (demo || owner === sessionUser.current) setError(errorText(e));
     } finally {
       mutationLock.current = false;
       setMutationBusy(false);
@@ -632,6 +645,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   }
   async function openMessage(m: Message) {
     if (!m) return;
+    const owner = sessionUser.current;
     if (m.folder === "drafts") {
       try {
         const draftFiles = await attachmentFiles(
@@ -639,10 +653,13 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           demo,
           attachmentCache.current,
         );
+        if (!demo && owner !== sessionUser.current) return;
         newMessage(
           {
             id: m.id,
             deliveryUnconfirmed: m.direction === "outbound",
+            thread_id: m.thread_id,
+            in_reply_to: m.in_reply_to,
             to: m.to_addresses.join(", "),
             cc: m.cc_addresses?.join(", ") || "",
             bcc: m.bcc_addresses?.join(", ") || "",
@@ -655,7 +672,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           draftFiles,
         );
       } catch (e) {
-        setError(`Could not open draft: ${errorText(e)}`);
+        if (demo || owner === sessionUser.current) setError(`Could not open draft: ${errorText(e)}`);
       }
       return;
     }
@@ -682,6 +699,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   }
   async function saveDraft() {
     if (!composer || sendingLock.current) return;
+    const owner = sessionUser.current;
     const data = composer;
     if (data.deliveryUnconfirmed) { setError("Check delivery status before saving or retrying this message. Your device recovery copy keeps the files and the delivery warning."); return; }
     if (
@@ -704,6 +722,8 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         account_id: accounts.find((a) => a.address === data.fromAddress)?.id,
         direction: "draft",
         folder: "drafts",
+        thread_id: data.thread_id,
+        in_reply_to: data.in_reply_to,
         from_address: data.fromAddress,
         to_addresses: recipients(data.to),
         cc_addresses: recipients(data.cc),
@@ -719,7 +739,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       if (demo) {
         const encoded = await encodeFiles(files);
         const id = data.id || crypto.randomUUID();
-        setMessages((prev) => [
+        commitDemoMessages([
           {
             ...row,
             id,
@@ -735,23 +755,24 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
               dataUrl: `data:${file.contentType};base64,${file.content}`,
             })),
           },
-          ...prev.filter((m) => m.id !== id),
+          ...latestMessages.current.filter((m) => m.id !== id),
         ]);
       } else {
         const result = await saveServerDraft(data, files, accounts);
+        if (owner !== sessionUser.current) return;
         await load();
+        if (owner !== sessionUser.current) return;
         if (result.warning) setError(result.warning);
       }
       await recovery.clear().catch(() => {
-        setError(
-          "Draft saved, but its device recovery copy could not be cleared.",
-        );
+        if (demo || owner === sessionUser.current) setError("Draft saved, but its device recovery copy could not be cleared.");
       });
+      if (!demo && owner !== sessionUser.current) return;
       setComposer(null);
       setFiles([]);
       setNotice("Draft saved.");
     } catch (e) {
-      setError(errorText(e));
+      if (demo || owner === sessionUser.current) setError(errorText(e));
     } finally {
       sendingLock.current = false;
       setSending(false);
@@ -759,23 +780,24 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   }
   async function discardComposer() {
     if (!composer || sendingLock.current) return;
+    const owner = sessionUser.current;
     sendingLock.current = true;
     setSending(true);
     setError("");
     const id = composer.id;
     try {
       if (id && !demo) await removeDraft(id);
+      if (!demo && owner !== sessionUser.current) return;
       await recovery.clear().catch(() => {
-        setError(
-          "Draft discarded, but its recovery copy could not be removed from device storage.",
-        );
+        if (demo || owner === sessionUser.current) setError("Draft discarded, but its recovery copy could not be removed from device storage.");
       });
+      if (!demo && owner !== sessionUser.current) return;
       if (id) setMessages((previous) => previous.filter((m) => m.id !== id));
       setComposer(null);
       setFiles([]);
       setNotice("Draft discarded.");
     } catch (e) {
-      setError(`Could not discard draft: ${errorText(e)}`);
+      if (demo || owner === sessionUser.current) setError(`Could not discard draft: ${errorText(e)}`);
     } finally {
       sendingLock.current = false;
       setSending(false);
@@ -783,6 +805,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   }
   async function send(e: React.FormEvent) {
     e.preventDefault();
+    const owner = sessionUser.current;
     if (!composer || sendingLock.current || composer.deliveryUnconfirmed) return;
     if (composer.scheduledAt && Date.parse(composer.scheduledAt) < Date.now() + 60000) { setError("Schedule delivery at least one minute in the future."); return; }
     if (composer.text.length > 100000 || (composer.html?.length || 0) > 850000) { setError("This message is too large. Attach large images or documents as files."); return; }
@@ -811,6 +834,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       const allFiles = [...files, ...formatted.inline.map(image => image.file)];
       const sizeError = validateFiles(allFiles); if (sizeError) throw new Error(sizeError);
       const attachments = (await encodeFiles(allFiles)).map((file, index) => ({ ...file, ...(index >= files.length ? { contentId: formatted.inline[index - files.length].contentId } : {}) }));
+      if (!demo && owner !== sessionUser.current) return;
       if (demo) {
         const sent: Message = {
           id: crypto.randomUUID(),
@@ -820,6 +844,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           cc_addresses: recipients(composer.cc),
           bcc_addresses: recipients(composer.bcc),
           thread_id: composer.thread_id,
+          in_reply_to: composer.in_reply_to,
           subject: composer.subject,
           text_body: composer.text,
           html_body: composer.html,
@@ -838,10 +863,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
             dataUrl: `data:${a.contentType};base64,${a.content}`,
           })),
         };
-        setMessages((prev) => [
-          sent,
-          ...prev.filter((m) => m.id !== composer.id),
-        ]);
+        commitDemoMessages([sent, ...latestMessages.current.filter(m => m.id !== composer.id)]);
         setFolder(composer.scheduledAt ? "scheduled" : "sent");
         setActive(sent.id);
         setQuery("");
@@ -851,27 +873,34 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           to: recipients(composer.to), cc: recipients(composer.cc), bcc: recipients(composer.bcc),
           attachments, draft_id: composer.id || null,
         });
+        if (owner !== sessionUser.current) { await recovery.clear().catch(() => {}); return; }
         deliveryWarning = typeof data?.warning === "string" ? data.warning : "";
+        await recovery.clear().catch(() => { deliveryWarning = [deliveryWarning, "Email sent, but the device recovery copy could not be removed. Discard it if it reappears."].filter(Boolean).join(" "); });
+        if (owner !== sessionUser.current) return;
         // A successful delivery must never be reported as failed by later refresh/draft cleanup.
         if (composer.id) {
           try { await removeDraft(composer.id); }
           catch { deliveryWarning = [deliveryWarning,
             "Email sent, but the old draft could not be removed. Refresh before sending again."].filter(Boolean).join(" "); }
         }
+        if (owner !== sessionUser.current) return;
         attachmentCache.current.clear();
         await load();
+        if (owner !== sessionUser.current) return;
         setFolder(composer.scheduledAt ? "scheduled" : "sent");
         setActive(null);
       }
+      if (!demo && owner !== sessionUser.current) return;
       if (composer.event_id) {
         const event = workspace.data.events.find(event => event.id === composer.event_id);
         if (event) try { await workspace.save("events", { id: event.id, status: composer.event_method === "CANCEL" ? "cancelled" : "sent", sequence: composer.event_sequence ?? event.sequence }); }
         catch { deliveryWarning = [deliveryWarning, "The invitation was accepted, but its calendar status could not be saved. Do not resend it."].filter(Boolean).join(" "); }
       }
-      await recovery.clear().catch(() => {
+      if (demo) await recovery.clear().catch(() => {
         deliveryWarning = [deliveryWarning,
           "Email sent, but the device recovery copy could not be removed. Discard it if it reappears."].filter(Boolean).join(" ");
       });
+      if (!demo && owner !== sessionUser.current) return;
       if (deliveryWarning) setError(deliveryWarning);
       setComposer(null);
       setFiles([]);
@@ -882,6 +911,10 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           : composer.scheduledAt ? "Email scheduled." : "Email sent.",
       );
     } catch (e) {
+      if (!demo && owner !== sessionUser.current) {
+        if (e && typeof e === "object" && "deliveryUnconfirmed" in e && e.deliveryUnconfirmed) await recovery.save({ ...composer, deliveryUnconfirmed: true }, files).catch(() => {});
+        return;
+      }
       if (e && typeof e === "object" && "deliveryUnconfirmed" in e && e.deliveryUnconfirmed) {
         setComposer(previous => previous ? { ...previous, deliveryUnconfirmed: true } : null);
         setError(errorText(e));
@@ -894,9 +927,11 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
 
   function prepareInvitation(event: Entry, method: "REQUEST" | "CANCEL") {
     const address = accounts.find(a => a.id === event.organizer_account_id)?.address || ownAddress;
+    const required = recipients(event.required_attendees), optional = recipients(event.optional_attendees).filter(address => !required.some(recipient => recipient.toLowerCase() === address.toLowerCase()));
+    const to = required.length ? required : optional.slice(0, 1), cc = required.length ? optional : optional.slice(1);
     const file = new globalThis.File([calendarText(event, address, method)], "invitation.ics", { type: `text/calendar; charset=utf-8; method=${method}` });
-    newMessage({ fromAddress: address, to: (event.required_attendees || []).join(", "), cc: (event.optional_attendees || []).join(", "), subject: `${method === "CANCEL" ? "Cancelled: " : ""}${event.title}`,
-      text: `${event.title}\n${new Date(event.start_at).toLocaleString()} – ${new Date(event.end_at).toLocaleString()} (${event.timezone})\n${[event.location, event.meeting_url, event.description].filter(Boolean).join("\n\n")}`,
+    newMessage({ fromAddress: address, to: to.join(", "), cc: cc.join(", "), subject: `${method === "CANCEL" ? "Cancelled: " : ""}${event.title}`,
+      text: `${event.title}\n${eventTime(event.start_at, event.timezone, event.all_day)} – ${eventTime(event.end_at, event.timezone, event.all_day)} (${event.timezone})\n${[event.location, event.meeting_url, event.description].filter(Boolean).join("\n\n")}`,
       event_id: event.id, event_method: method, event_sequence: Number(event.sequence || 0),
     }, [file]);
   }
@@ -1901,6 +1936,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 type="file"
                 multiple
                 ref={fileRef}
+                aria-label="Attachment files"
                 className="visually-hidden"
                 onChange={(e) => {
                   addFiles(Array.from(e.target.files || []));
@@ -1994,7 +2030,8 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
             {signatures.ready && accounts.length > 0 && (
               <SignatureSettings key={demo ? "demo" : session?.user.id} accounts={accounts} {...signatures} />
             )}
-            {workspace.ready && <AdvancedSettings key={demo ? "demo" : session?.user.id} workspace={workspace} accounts={accounts} demo={demo} push={push} onAccounts={setAccounts} />}
+            {workspace.error && <p className="form-error" role="alert">Workspace settings could not be loaded: {workspace.error} <button className="text-button" onClick={() => void workspace.refresh()}>Retry loading workspace</button></p>}
+            {workspace.ready && <AdvancedSettings key={demo ? "demo" : session?.user.id} workspace={workspace} accounts={accounts} demo={demo} push={push} onAccounts={next => { if (demo || session?.user.id === sessionUser.current) setAccounts(next); }} />}
             <div className="tools-actions settings-tools-links"><button className="secondary-button" onClick={() => { setSettings(false); setTools("signatures"); }}>Saved signatures</button><button className="secondary-button" onClick={() => { setSettings(false); setTools("filters"); }}>Labels, filters & templates</button></div>
             {demo ? (
               <button
@@ -2194,6 +2231,8 @@ function Attachments({
   demo: boolean;
   cache: Map<string, Attachment[]>;
 }) {
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [items, setItems] = useState<Attachment[]>(
     message.attachments || cache.get(message.id) || [],
   );
@@ -2246,6 +2285,7 @@ function Attachments({
         if (error) throw error;
         url = data.signedUrl;
       }
+      if (!mounted.current) return;
       if (!url) throw new Error("This attachment is unavailable.");
       if (demo && !url.startsWith("data:"))
         throw new Error("Invalid sample attachment.");
@@ -2287,8 +2327,8 @@ function Attachments({
               className="attachment-card"
               key={item.id}
               onClick={() => void download(item)}
-              aria-label={`Download ${item.filename}`}
             >
+              <span className="visually-hidden">Download </span>
               <span className="file-icon">
                 <File size={20} />
               </span>

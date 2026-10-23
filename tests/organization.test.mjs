@@ -31,3 +31,11 @@ test("all-mail and label search exclude spam/trash, and pinned messages come fir
   assert.deepEqual(filterMessages(messages, "all", "label:projects").map(m => m.id), ["old", "one"]);
   assert.match(validateFiles(Array(15).fill({ size: 1 })), /at most 14/);
 });
+
+test("event display follows its declared timezone across device locales and daylight saving", async () => {
+  const { eventTime } = await import("../src/lib/organization.mjs");
+  assert.match(eventTime("2026-11-04T09:00:00Z", "Europe/Berlin", false, "en-GB"), /10:00/);
+  assert.match(eventTime("2026-06-04T09:00:00Z", "Europe/Berlin", false, "en-GB"), /11:00/);
+  assert.match(eventTime("2026-11-04T09:00:00Z", "America/New_York", false, "en-GB"), /04:00/);
+  assert.doesNotMatch(eventTime("2026-11-04T09:00:00Z", "Europe/Berlin", true, "en-GB"), /\d\d:\d\d/);
+});

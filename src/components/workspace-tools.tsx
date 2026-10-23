@@ -1,10 +1,11 @@
 "use client";
+import { errorText } from "@/lib/mail-utils.mjs";
 import { useCallback, useState } from "react";
 import { CalendarDays, ContactRound, FileText, Filter, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { WorkspaceModal } from "./workspace-modal";
 import { RichEditor } from "./rich-editor";
 import { plainHtml, htmlText } from "@/lib/rich-text";
-import { calendarText, localToInstant, instantToLocal } from "@/lib/organization.mjs";
+import { calendarText, localToInstant, instantToLocal, eventTime } from "@/lib/organization.mjs";
 import { recipients, validRecipients } from "@/lib/mail-utils.mjs";
 import type { Resource, Entry } from "@/lib/workspace";
 import type { Account, Compose } from "@/lib/types";
@@ -44,7 +45,7 @@ export function WorkspaceTools({ workspace, accounts, initialTab, onClose, onCom
   async function perform(action: () => Promise<unknown>, done: string) {
     if (busy) return;
     setBusy(true); setError(""); setNotice("");
-    try { await action(); setNotice(done); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try { await action(); setNotice(done); } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
   async function save(event: React.FormEvent) {
@@ -69,6 +70,7 @@ export function WorkspaceTools({ workspace, accounts, initialTab, onClose, onCom
       } else {
         const start_at = localToInstant(form.start, form.timezone), end_at = localToInstant(form.end, form.timezone);
         if (Date.parse(end_at) <= Date.parse(start_at)) throw new Error("The event must end after it starts.");
+        if (form.all_day && String(form.end).slice(0, 10) <= String(form.start).slice(0, 10)) throw new Error("For an all-day event, choose an end date after the start date. The end date is exclusive.");
         if ((form.attendees && !validRecipients(form.attendees)) || (form.optional && !validRecipients(form.optional))) throw new Error("Enter valid attendee email addresses.");
         if (form.meeting_url && !/^https?:\/\//i.test(form.meeting_url)) throw new Error("Use an HTTPS or HTTP meeting link.");
         row = { ...row, title: form.title, start_at, end_at, timezone: form.timezone, all_day: Boolean(form.all_day), required_attendees: recipients(form.attendees), optional_attendees: recipients(form.optional),
@@ -103,7 +105,7 @@ export function WorkspaceTools({ workspace, accounts, initialTab, onClose, onCom
       <div className="tools-list-toolbar"><input aria-label="Search workspace tools" placeholder={`Search ${tabs.find(x => x[0] === tab)?.[1].toLowerCase()}…`} value={query} onChange={e => setQuery(e.target.value)} /><button className="primary-button" disabled={!workspace.ready || busy} onClick={() => edit(null)}><Plus size={15} />New {tab === "events" ? "event" : tab.replace(/s$/, "")}</button></div>
       {tab === "filters" && <p className="tools-help">Rules apply to newly loaded Inbox messages. <button className="text-button" disabled={busy} onClick={() => void perform(onApplyFilters, "Filters applied to current Inbox messages.")}>Apply filters to Inbox now</button></p>}
       {!rows.length && <div className="tools-empty">Nothing here yet. Create your first {tab === "events" ? "event" : tab.replace(/s$/, "")}.</div>}
-      <div className="tools-list">{rows.map(row => <article key={row.id} className="tool-card"><div><strong>{row.display_name || row.title || row.name || row.email}</strong><p>{tab === "contacts" ? [row.email, row.company, row.phone].filter(Boolean).join(" · ") : tab === "events" ? `${new Date(row.start_at).toLocaleString()} · ${row.timezone} · ${row.status}` : tab === "filters" ? `${row.active === false ? "Paused" : "Enabled"} · ${Object.keys(row.conditions || {}).join(", ")}` : tab === "signatures" ? `${accounts.find(a => a.id === row.account_id)?.address || "All sender accounts"}${row.is_default ? " · Default" : ""}` : tab === "labels" ? row.name : row.subject}</p>{tab === "labels" && <span className="label-dot" style={{ background: row.color }} />}</div><div className="tools-actions">
+      <div className="tools-list">{rows.map(row => <article key={row.id} className="tool-card"><div><strong>{row.display_name || row.title || row.name || row.email}</strong><p>{tab === "contacts" ? [row.email, row.company, row.phone].filter(Boolean).join(" · ") : tab === "events" ? `${eventTime(row.start_at, row.timezone, row.all_day)} · ${row.timezone} · ${row.status}` : tab === "filters" ? `${row.active === false ? "Paused" : "Enabled"} · ${Object.keys(row.conditions || {}).join(", ")}` : tab === "signatures" ? `${accounts.find(a => a.id === row.account_id)?.address || "All sender accounts"}${row.is_default ? " · Default" : ""}` : tab === "labels" ? row.name : row.subject}</p>{tab === "labels" && <span className="label-dot" style={{ background: row.color }} />}</div><div className="tools-actions">
         {tab === "contacts" && <button className="secondary-button" onClick={() => { onClose(); onCompose({ to: row.email }); }}>Write email</button>}
         {tab === "templates" && <button className="secondary-button" onClick={() => { onClose(); onCompose({ subject: row.subject, text: row.text_body || htmlText(row.html_body || ""), html: row.html_body || undefined }); }}>Use template</button>}
         {tab === "events" && <><button className="secondary-button" disabled={row.status === "cancelled"} onClick={() => { onClose(); onInvite({ ...row, sequence: row.status === "sent" ? Number(row.sequence || 0) + 1 : Number(row.sequence || 0) }, "REQUEST"); }}>Prepare invitation</button><button className="text-button" onClick={() => downloadCalendar(row, accounts.find(a => a.id === row.organizer_account_id)?.address || accounts[0]?.address || "")}>Download ICS</button>{row.status === "sent" && <button className="text-button" onClick={() => { onClose(); onInvite({ ...row, sequence: Number(row.sequence || 0) + 1 }, "CANCEL"); }}>Prepare cancellation</button>}</>}
