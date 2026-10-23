@@ -1,15 +1,13 @@
 import { supabase as mailDb } from './supabase-client.js';
 import { CONFIG } from './config.js';
+import { renderMailAttachments } from './mail-attachments.js';
 
 const qs = (s, root = document) => root.querySelector(s);
 const qsa = (s, root = document) => [...root.querySelectorAll(s)];
-const ATTACHMENT_BUCKET = 'frankiflow-mail-attachments';
 const MEETING_TZ = 'Europe/Berlin';
 let deferredInstallPrompt = null;
 let lastVisibleRefresh = Date.now();
 let decorateScheduled = false;
-let readerEnhancementKey = '';
-let readerEnhancementBusy = false;
 let standaloneRenderedFor = '';
 
 function esc(value = '') {
@@ -212,49 +210,8 @@ function sanitizeEmailHtml(html = '') {
   return '<!doctype html>' + doc.documentElement.outerHTML;
 }
 
-function attachmentIcon(type = '', filename = '') {
-  const mime = String(type).toLowerCase(), name = String(filename).toLowerCase();
-  if (mime.includes('pdf') || name.endsWith('.pdf')) return 'picture_as_pdf';
-  if (mime.startsWith('image/')) return 'image';
-  if (mime.includes('sheet') || /\.(xlsx?|csv)$/.test(name)) return 'table_view';
-  if (mime.includes('word') || /\.(docx?|rtf)$/.test(name)) return 'description';
-  if (mime.includes('zip') || /\.(zip|rar|7z)$/.test(name)) return 'folder_zip';
-  return 'attach_file';
-}
-
-async function signedAttachmentUrls(attachment) {
-  const bucket = mailDb.storage.from(ATTACHMENT_BUCKET);
-  const [{ data: view }, { data: download }] = await Promise.all([
-    bucket.createSignedUrl(attachment.storage_path, 3600),
-    bucket.createSignedUrl(attachment.storage_path, 3600, { download: attachment.filename || true })
-  ]);
-  return { view: view?.signedUrl || '', download: download?.signedUrl || view?.signedUrl || '' };
-}
-
-async function renderAttachments(container, messageId) {
-  const { data, error } = await mailDb.from('frankiflow_mail_attachments').select('id,filename,content_type,size_bytes,storage_path').eq('message_id', messageId).order('created_at');
-  if (error || !data?.length) return;
-  const block = document.createElement('div');
-  block.className = 'ff-attachment-block';
-  block.innerHTML = `<div class="ff-attachment-title">${icon('attach_file')} ${data.length} attachment${data.length === 1 ? '' : 's'}</div><div class="ff-attachment-grid"></div>`;
-  container.appendChild(block);
-  const grid = qs('.ff-attachment-grid', block);
-  for (const attachment of data) {
-    const urls = await signedAttachmentUrls(attachment);
-    const card = document.createElement('div');
-    card.className = 'ff-attachment-card';
-    card.title = 'Double-click to open attachment';
-    card.innerHTML = `<div class="ff-attachment-icon">${icon(attachmentIcon(attachment.content_type, attachment.filename))}</div><div class="ff-attachment-meta"><strong>${esc(attachment.filename || 'Attachment')}</strong><small>${esc(attachment.content_type || 'file')} · ${fmtBytes(attachment.size_bytes)}</small></div><div class="ff-attachment-actions"><button class="ff-mini-btn ff-preview" title="Open">${icon('open_in_new')}</button><button class="ff-mini-btn ff-download" title="Download">${icon('download')}</button></div>`;
-    const open = () => urls.view && window.open(urls.view, '_blank', 'noopener,noreferrer');
-    card.addEventListener('dblclick', open);
-    qs('.ff-preview', card).addEventListener('click', e => { e.stopPropagation(); open(); });
-    qs('.ff-download', card).addEventListener('click', e => {
-      e.stopPropagation();
-      if (!urls.download) return;
-      const a = document.createElement('a'); a.href = urls.download; a.download = attachment.filename || 'attachment'; a.rel = 'noopener'; a.click();
-    });
-    grid.appendChild(card);
-  }
+async function renderAttachments(container,messageId,message={}) {
+  return renderMailAttachments(container,{...message,id:messageId},mailDb);
 }
 
 function renderHtmlInto(container, html, fallbackText = '') {
@@ -285,44 +242,6 @@ function renderHtmlInto(container, html, fallbackText = '') {
   return rich;
 }
 
-async function enhanceReader() {
-  const panel = qs('#reader');
-  const active = qs('.mail-row.active');
-  if (!panel?.classList.contains('open') || !active?.dataset.id || readerEnhancementBusy) return;
-  const activeId = active.dataset.id;
-  const cards = qsa('.thread-card', panel);
-  const key = `${activeId}:${cards.length}`;
-  if (!cards.length || readerEnhancementKey === key) return;
-  readerEnhancementBusy = true;
-  try {
-    const { data: activeMessage, error } = await mailDb.from('frankiflow_mail_messages').select('id,thread_id,reply_to,from_address,subject').eq('id', activeId).maybeSingle();
-    if (error || !activeMessage) return;
-    let messages = [];
-    if (cards.length === 1) {
-      const { data } = await mailDb.from('frankiflow_mail_messages').select('*').eq('id', activeId).maybeSingle();
-      if (data) messages = [data];
-    } else if (activeMessage.thread_id) {
-      const { data } = await mailDb.from('frankiflow_mail_messages').select('*').eq('thread_id', activeMessage.thread_id).order('created_at', { ascending:true });
-      messages = data || [];
-    }
-    cards.forEach((card, index) => {
-      const message = messages[index];
-      if (!message) return;
-      card.dataset.messageId = message.id;
-      const body = qs('.thread-body', card);
-      if (!body) return;
-      if (body.dataset.ffRich !== '1') {
-        body.dataset.ffRich = '1';
-        renderHtmlInto(body, message.html_body, message.text_body);
-      }
-      if (body.dataset.ffAttachments !== '1') {
-        body.dataset.ffAttachments = '1';
-        renderAttachments(body, message.id);
-      }
-    });
-    readerEnhancementKey = key;
-  } finally { readerEnhancementBusy = false; }
-}
 
 function dialogEmail(value='') {
   const raw = String(value || '').trim();
@@ -505,7 +424,7 @@ async function renderDialogHistory(mount, messages, selectedId) {
     mount.appendChild(card);
     const content = qs('.ff-dialog-message-content', card);
     renderHtmlInto(content, item.html_body, item.text_body);
-    await renderAttachments(content, item.id);
+    await renderAttachments(content,item.id,item);
   }
 }
 async function sendDialogReply({ message, accounts, mode, editor, files, status, button, scheduledAt=null }) {
@@ -598,7 +517,7 @@ async function standaloneView() {
   qs('#ffCloseStandalone')?.addEventListener('click', () => window.close());
   const body = qs('#ffStandaloneBody');
   renderHtmlInto(body, message.html_body, message.text_body);
-  await renderAttachments(body, message.id);
+  await renderAttachments(body,message.id,message);
   return true;
 }
 
@@ -702,7 +621,6 @@ function decorate() {
   decorateTopbar();
   updateUnreadTitle();
   standaloneView();
-  enhanceReader();
 }
 
 function scheduleDecorate() {
@@ -756,7 +674,7 @@ document.addEventListener('visibilitychange', () => {
   lastVisibleRefresh = now;
 });
 
-mailDb.auth.onAuthStateChange((_event, currentSession) => { if (currentSession) { readerEnhancementKey=''; setTimeout(scheduleDecorate, 80); } });
+mailDb.auth.onAuthStateChange((_event, currentSession) => { if (currentSession) { setTimeout(scheduleDecorate, 80); } });
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -765,8 +683,6 @@ if ('serviceWorker' in navigator) {
 }
 
 const observer = new MutationObserver(() => {
-  const activeId = qs('.mail-row.active')?.dataset.id || '';
-  if (!activeId) readerEnhancementKey = '';
   scheduleDecorate();
 });
 observer.observe(document.body, { childList:true, subtree:true });

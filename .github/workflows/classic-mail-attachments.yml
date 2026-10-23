@@ -1,0 +1,49 @@
+name: Classic mail attachment regression
+on:
+  push:
+    branches: [fix/sent-attachments, develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  attachments:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: JavaScript syntax
+        run: |
+          node --check assets/app.js
+          node --check assets/enhancements.js
+          node --check assets/mail-attachments.js
+          node --check sw.js
+          node --check tests/classic-client.js
+          git diff --check
+      - name: Install isolated browser test dependencies
+        run: |
+          npm install --prefix /tmp/frankiflow-mail-tests --no-package-lock --no-audit --no-fund playwright@1.64.1
+          /tmp/frankiflow-mail-tests/node_modules/.bin/playwright install --with-deps chromium
+          node -e 'require("fs").appendFileSync(process.env.GITHUB_ENV, "CHROMIUM_PATH=" + require("/tmp/frankiflow-mail-tests/node_modules/playwright").chromium.executablePath() + "\n")'
+      - name: Classic mail browser tests
+        env:
+          PLAYWRIGHT_MODULE: /tmp/frankiflow-mail-tests/node_modules/playwright
+        run: |
+          python3 -m http.server 8128 --bind 127.0.0.1 > /tmp/frankiflow-mail-test-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8128/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node tests/classic-attachments.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: classic-mail-browser-results
+          path: test-results/classic-attachments.png
+          if-no-files-found: ignore

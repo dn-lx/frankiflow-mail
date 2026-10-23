@@ -1,4 +1,4 @@
-const CACHE = 'frankiflow-mail-dev-v19';
+const CACHE = 'frankiflow-mail-dev-v20';
 const SHELL = [
   '/',
   '/index.html',
@@ -13,6 +13,7 @@ const SHELL = [
   '/assets/settings-cleanup.js',
   '/assets/config.js',
   '/assets/supabase-client.js',
+  '/assets/mail-attachments.js',
   '/assets/icon.svg'
 ];
 

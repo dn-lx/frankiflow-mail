@@ -1,13 +1,18 @@
 import { supabase } from './supabase-client.js';
 import { CONFIG } from './config.js';
+import { renderMailAttachments } from './mail-attachments.js';
 
 const root = document.querySelector('#app');
 const toastStack = document.createElement('div'); toastStack.className='toast-stack'; document.body.append(toastStack);
 const state = {
-  session:null, messages:[], accounts:[], labels:[], messageLabels:[], contacts:[], templates:[], signatures:[], settings:null, events:[],
+  session:null, attachmentMessageIds:new Set(), messages:[], accounts:[], labels:[], messageLabels:[], contacts:[], templates:[], signatures:[], settings:null, events:[],
   folder:'inbox', category:'all', mobileQuickFilter:'all', activeId:null, selected:new Set(), search:'', loading:true,
   composer:null, commandOpen:false, filters:[], realtimeChannel:null, pushConfigured:false, pushSubscriptionActive:false, pushLastError:null
 };
+
+let mailboxLoadVersion = 0;
+let attachmentLoadVersion = 0;
+const hasAttachments = message => Boolean(message.has_attachments || state.attachmentMessageIds.has(message.id));
 
 const NAV = [
   ['inbox','inbox','Inbox'],['starred','star','Starred'],['snoozed','schedule','Snoozed'],['sent','send','Sent'],
@@ -80,6 +85,7 @@ function renderReaderEmailBody(container,message){
     text.style.whiteSpace='pre-wrap';text.style.lineHeight='1.65';text.textContent=message.text_body||'';
     rich.appendChild(text);
   }
+  void renderMailAttachments(container,message,supabase);
 }
 
 function applyTheme(){
@@ -128,7 +134,7 @@ function advancedMatch(m,query){
       if(k==='is'&&v==='pinned'&&!m.is_pinned)return false;
       if(k==='is'&&v==='important'&&m.priority!=='high')return false;
       if(k==='is'&&v==='muted'&&!m.is_muted)return false;
-      if(k==='has'&&v==='attachment'&&!m.has_attachments)return false;
+      if(k==='has'&&v==='attachment'&&!hasAttachments(m))return false;
       if(k==='in'&&effectiveFolder(m)!==v)return false;
       if(k==='before'){const d=new Date(v);if(!Number.isNaN(d.getTime())&&stamp>=d)return false;}
       if(k==='after'){const d=new Date(v);if(!Number.isNaN(d.getTime())&&stamp<=d)return false;}
@@ -149,7 +155,7 @@ function currentMessages(){
     const f=state.mobileQuickFilter;
     if(f==='unread')list=list.filter(m=>!m.is_read);
     if(f==='starred')list=list.filter(m=>m.is_starred);
-    if(f==='attachments')list=list.filter(m=>m.has_attachments);
+    if(f==='attachments')list=list.filter(hasAttachments);
     if(f==='info'||f==='mail')list=list.filter(m=>{
       const labelNames=labelsFor(m.id).map(l=>String(l.name||'').toLowerCase());
       const account=String(accountForMessage(m)?.address||'').toLowerCase();
@@ -241,7 +247,7 @@ async function bulkAction(action){
 function renderList(){
   const box=document.querySelector('#messages');if(!box)return;const list=currentMessages();const countEl=document.querySelector('#messageCount');if(countEl)countEl.textContent=`${list.length} message${list.length===1?'':'s'}`;
   if(!list.length){box.innerHTML=`<div class="empty"><div>${icon(state.search?'search_off':'inbox')}<strong>${state.search?'No matching mail':'Nothing here'}</strong>${state.search?'Try another search or remove a filter.':'This folder is clean.'}</div></div>`;return;}
-  box.innerHTML=list.map(m=>{const ls=labelsFor(m.id);const th=threadFor(m);return`<article class="mail-row ${m.is_read?'':'unread'} ${state.activeId===m.id?'active':''}" data-id="${m.id}"><input class="check row-check" type="checkbox" ${state.selected.has(m.id)?'checked':''}><button class="star-btn ${m.is_starred?'on':''}" data-star="${m.id}" title="Star">${icon(m.is_starred?'star':'star')}</button><div class="avatar">${initials(senderName(m))}</div><div class="mail-main"><div class="sender-line"><span class="sender">${esc(senderName(m))}</span>${th.length>1?`<span class="thread-count">${th.length}</span>`:''}${m.is_pinned?icon('keep','pin-on'):''}</div><div class="subject-line">${m.priority==='high'?'<span class="priority-dot" title="High priority"></span>':''}<span class="subject">${esc(m.subject||'(no subject)')}</span></div><div class="preview">${esc(m.preview||stripHtml(m.html_body)||m.text_body||'')}</div>${ls.length?`<div class="row-labels">${ls.slice(0,3).map(l=>`<span class="mini-label" style="background:${esc(l.color)}">${esc(l.name)}</span>`).join('')}</div>`:''}</div><div class="row-meta"><time class="time">${fmtDate(m.received_at||m.sent_at||m.scheduled_at||m.created_at)}</time><div class="row-icons">${m.has_attachments?icon('attach_file'):''}${m.folder==='snoozed'?icon('schedule'):''}</div></div></article>`}).join('');
+  box.innerHTML=list.map(m=>{const ls=labelsFor(m.id);const th=threadFor(m);return`<article class="mail-row ${m.is_read?'':'unread'} ${state.activeId===m.id?'active':''}" data-id="${m.id}"><input class="check row-check" type="checkbox" ${state.selected.has(m.id)?'checked':''}><button class="star-btn ${m.is_starred?'on':''}" data-star="${m.id}" title="Star">${icon(m.is_starred?'star':'star')}</button><div class="avatar">${initials(senderName(m))}</div><div class="mail-main"><div class="sender-line"><span class="sender">${esc(senderName(m))}</span>${th.length>1?`<span class="thread-count">${th.length}</span>`:''}${m.is_pinned?icon('keep','pin-on'):''}</div><div class="subject-line">${m.priority==='high'?'<span class="priority-dot" title="High priority"></span>':''}<span class="subject">${esc(m.subject||'(no subject)')}</span></div><div class="preview">${esc(m.preview||stripHtml(m.html_body)||m.text_body||'')}</div>${ls.length?`<div class="row-labels">${ls.slice(0,3).map(l=>`<span class="mini-label" style="background:${esc(l.color)}">${esc(l.name)}</span>`).join('')}</div>`:''}</div><div class="row-meta"><time class="time">${fmtDate(m.received_at||m.sent_at||m.scheduled_at||m.created_at)}</time><div class="row-icons">${hasAttachments(m)?icon('attach_file'):''}${m.folder==='snoozed'?icon('schedule'):''}</div></div></article>`}).join('');
   box.querySelectorAll('.mail-row').forEach(row=>row.onclick=async e=>{if(e.target.closest('.row-check,.star-btn'))return;const m=state.messages.find(x=>x.id===row.dataset.id);if(m?.folder==='drafts'||m?.direction==='draft'){openComposerFromDraft(m);return;}state.activeId=row.dataset.id;if(m&&!m.is_read&&m.direction==='inbound'&&state.settings?.mark_read_on_open!==false)await patchMessage(m.id,{is_read:true},false);renderList();renderReader();});
   box.querySelectorAll('.row-check').forEach(ch=>ch.onchange=e=>{const id=e.target.closest('.mail-row').dataset.id;e.target.checked?state.selected.add(id):state.selected.delete(id);renderBulk();});
   box.querySelectorAll('[data-star]').forEach(b=>b.onclick=async e=>{e.stopPropagation();const m=state.messages.find(x=>x.id===b.dataset.star);await patchMessage(m.id,{is_starred:!m.is_starred});});
@@ -322,7 +328,7 @@ function composerBodyHasMeaningfulContent(){
   return Boolean(stripHtml(clone.innerHTML).trim()||clone.querySelector('img'));
 }
 async function closeComposer(){
-  if(!state.composer)return;
+  if(!state.composer||state.composer.sending)return;
   clearTimeout(state.composer.saveTimer);
   const d=composerData();
   const replyContext=Boolean(state.composer.seed?.thread_id||state.composer.seed?.in_reply_to);
@@ -337,7 +343,7 @@ async function closeComposer(){
   if(!state.composer.draftId&&!composerHasMeaningfulContent(d)){state.composer.el.remove();state.composer=null;return;}
   await saveDraft();state.composer?.el.remove();state.composer=null;
 }
-async function discardComposer(){const d=state.composer?.draftId;if(d)await supabase.from('frankiflow_mail_messages').delete().eq('id',d);state.composer?.el.remove();state.composer=null;toast('Draft discarded','delete');await loadAll();}
+async function discardComposer(){if(!state.composer||state.composer.sending)return;clearTimeout(state.composer.saveTimer);if(state.composer.savePromise)await state.composer.savePromise;const d=state.composer?.draftId;if(d)await supabase.from('frankiflow_mail_messages').delete().eq('id',d);state.composer?.el.remove();state.composer=null;toast('Draft discarded','delete');await loadAll();}
 function composerData(){const c=state.composer?.el;if(!c)return null;return{fromAddress:c.querySelector('#cFrom').value,to:c.querySelector('#cTo').value,cc:c.querySelector('#cCc').value,bcc:c.querySelector('#cBcc').value,subject:c.querySelector('#cSubject').value,html:c.querySelector('#cEditor').innerHTML,text:c.querySelector('#cEditor').innerText,thread_id:state.composer.seed.thread_id||null,in_reply_to:state.composer.seed.in_reply_to||null};}
 function sanitizeRichHtml(html=''){
   const tpl=document.createElement('template');tpl.innerHTML=String(html||'');
@@ -391,11 +397,42 @@ function openSignatureManager(){
 }
 function addFiles(files){const allowed=files.filter(f=>f.size<=8*1024*1024);const total=[...state.composer.files,...allowed].reduce((s,f)=>s+f.size,0);if(total>18*1024*1024)return toast('Keep total attachments under 18 MB','warning');state.composer.files.push(...allowed);if(allowed.length<files.length)toast('Files over 8 MB were skipped','warning');renderAttachments();}
 function renderAttachments(){const box=state.composer?.el.querySelector('#attachmentList');if(!box)return;box.innerHTML=state.composer.files.map((f,i)=>`<span class="file-pill">${icon('description')} ${esc(f.name)} <small>${(f.size/1024/1024).toFixed(1)} MB</small><button data-file-remove="${i}">${icon('close')}</button></span>`).join('');box.querySelectorAll('[data-file-remove]').forEach(b=>b.onclick=()=>{state.composer.files.splice(+b.dataset.fileRemove,1);renderAttachments();});}
-function scheduleAutosave(immediate=false){if(!state.composer)return;clearTimeout(state.composer.saveTimer);state.composer.el.querySelector('#draftStatus').textContent='Saving…';state.composer.saveTimer=setTimeout(saveDraft,immediate?0:900);}
+function scheduleAutosave(immediate=false){if(!state.composer)return;clearTimeout(state.composer.saveTimer);state.composer.el.querySelector('#draftStatus').textContent='Saving…';state.composer.saveTimer=setTimeout(saveDraft,immediate===true?0:900);}
 function composerHasMeaningfulContent(d){if(!d)return false;if(d.to.trim()||d.cc.trim()||d.bcc.trim()||d.subject.trim()||state.composer?.files?.length||state.composer?.meeting)return true;const box=document.createElement('div');box.innerHTML=d.html||'';box.querySelectorAll('.signature[data-ff-signature]').forEach(x=>x.remove());return Boolean(stripHtml(box.innerHTML).trim());}
-async function saveDraft(){if(!state.composer)return;const d=composerData();if(!d)return;if(!state.composer.draftId&&!composerHasMeaningfulContent(d)){state.composer.el.querySelector('#draftStatus').textContent='Autosave on';return;}const account=accountByAddress(d.fromAddress)||await primaryAccount();const row={account_id:account.id,thread_id:d.thread_id,direction:'draft',folder:'drafts',from_address:d.fromAddress,to_addresses:splitAddr(d.to),cc_addresses:splitAddr(d.cc),bcc_addresses:splitAddr(d.bcc),subject:d.subject||'',text_body:d.text||'',html_body:d.html||'',preview:(d.text||'').replace(/\s+/g,' ').slice(0,180),is_read:true,updated_at:new Date().toISOString()};let result;if(state.composer.draftId)result=await supabase.from('frankiflow_mail_messages').update(row).eq('id',state.composer.draftId);else result=await supabase.from('frankiflow_mail_messages').insert(row).select('id').single();if(result.error)return state.composer?.el.querySelector('#draftStatus')&&(state.composer.el.querySelector('#draftStatus').textContent='Save failed');if(result.data?.id)state.composer.draftId=result.data.id;if(state.composer)state.composer.el.querySelector('#draftStatus').textContent='Saved';}
+async function saveDraft(){
+  const composer=state.composer;if(!composer||composer.sending)return;
+  if(composer.savePromise){composer.pendingSave=true;return composer.savePromise;}
+  composer.savePromise=saveDraftData(composer);
+  try{return await composer.savePromise;}finally{composer.savePromise=null;if(composer.pendingSave&&state.composer===composer&&!composer.sending){composer.pendingSave=false;scheduleAutosave(true);}}
+}
+async function saveDraftData(composer){if(state.composer!==composer)return;const d=composerData();if(!d)return;if(!composer.draftId&&!composerHasMeaningfulContent(d)){composer.el.querySelector('#draftStatus').textContent='Autosave on';return;}const account=accountByAddress(d.fromAddress)||await primaryAccount();const row={account_id:account.id,thread_id:d.thread_id,direction:'draft',folder:'drafts',from_address:d.fromAddress,to_addresses:splitAddr(d.to),cc_addresses:splitAddr(d.cc),bcc_addresses:splitAddr(d.bcc),subject:d.subject||'',text_body:d.text||'',html_body:d.html||'',preview:(d.text||'').replace(/\s+/g,' ').slice(0,180),is_read:true,updated_at:new Date().toISOString()};let result;if(composer.draftId)result=await supabase.from('frankiflow_mail_messages').update(row).eq('id',composer.draftId);else result=await supabase.from('frankiflow_mail_messages').insert(row).select('id').single();if(result.error)return composer?.el.querySelector('#draftStatus')&&(composer.el.querySelector('#draftStatus').textContent='Save failed');if(result.data?.id)composer.draftId=result.data.id;if(composer)composer.el.querySelector('#draftStatus').textContent='Saved';}
 async function filePayload(){const out=[];for(const f of state.composer?.files||[]){const bytes=new Uint8Array(await f.arrayBuffer());let binary='';const chunkSize=0x8000;for(let i=0;i<bytes.length;i+=chunkSize)binary+=String.fromCharCode(...bytes.subarray(i,i+chunkSize));const content=btoa(binary);out.push({filename:f.name,content,contentType:f.type||undefined});}return out;}
-async function sendComposer(scheduledAt=null){const d=composerData();if(!d?.to.trim())return toast('Add at least one recipient','warning');const b=state.composer.el.querySelector('#sendNow');b.disabled=true;b.innerHTML=`${icon('progress_activity')} Sending`;const inline=extractInlineImages(sanitizeRichHtml(d.html));d.html=inline.html;const meetingAttachment=meetingAttachmentPayload();const attachments=[...await filePayload(),...inline.attachments,...(meetingAttachment?[meetingAttachment]:[])];const ok=await sendMail({...d,scheduledAt,attachments,draft_id:state.composer.draftId});if(ok){if(state.composer.meeting?.id){const m=state.composer.meeting;const status=m.method==='CANCEL'?'cancelled':'sent';const sequence=Number(m.sequence||0);await supabase.from('frankiflow_mail_events').update({status,sequence,updated_at:new Date().toISOString()}).eq('id',m.id);const ev=state.events.find(x=>x.id===m.id);if(ev){ev.status=status;ev.sequence=sequence;}}state.composer.el.remove();state.composer=null;}else{b.disabled=false;b.innerHTML=`${icon('send')} Send`;}}
+async function sendComposer(scheduledAt=null){
+  const composer=state.composer;if(!composer||composer.sending)return;
+  const d=composerData();if(!d?.to.trim())return toast('Add at least one recipient','warning');
+  composer.sending=true;clearTimeout(composer.saveTimer);
+  const controls=[...composer.el.querySelectorAll('button,input,select')].map(element=>[element,element.disabled]);
+  controls.forEach(([element])=>{element.disabled=true;});
+  const editor=composer.el.querySelector('#cEditor'),editable=editor.contentEditable;editor.contentEditable='false';
+  const button=composer.el.querySelector('#sendNow');button.innerHTML=`${icon('progress_activity')} Sending`;
+  let sent=false;
+  try{
+    if(composer.savePromise)await composer.savePromise;
+    const inline=extractInlineImages(sanitizeRichHtml(d.html));d.html=inline.html;
+    const meetingAttachment=meetingAttachmentPayload();
+    const attachments=[...await filePayload(),...inline.attachments,...(meetingAttachment?[meetingAttachment]:[])];
+    sent=await sendMail({...d,scheduledAt,attachments,draft_id:composer.draftId});
+    if(!sent)return;
+    if(composer.meeting?.id){
+      const meeting=composer.meeting,status=meeting.method==='CANCEL'?'cancelled':'sent',sequence=Number(meeting.sequence||0);
+      try{const {error}=await supabase.from('frankiflow_mail_events').update({status,sequence,updated_at:new Date().toISOString()}).eq('id',meeting.id);if(error)throw error;const event=state.events.find(x=>x.id===meeting.id);if(event){event.status=status;event.sequence=sequence;}}
+      catch{toast('Email sent, but the calendar status could not be updated. Do not resend the email.','warning');}
+    }
+    composer.el.remove();if(state.composer===composer)state.composer=null;
+  }catch(error){toast(`${sent?'Email sent, but follow-up processing failed':'Could not prepare email'}: ${error.message}`,'error');}
+  finally{composer.sending=false;if(!sent&&state.composer===composer){controls.forEach(([element,disabled])=>{element.disabled=disabled;});editor.contentEditable=editable;button.innerHTML=`${icon('send')} Send`;scheduleAutosave();}}
+}
+
 function localDateTimeValue(date){const d=new Date(date.getTime()-date.getTimezoneOffset()*60000);return d.toISOString().slice(0,16);}
 function icsEscape(v=''){return String(v).replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');}
 function icsUtc(v){return new Date(v).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');}
@@ -426,9 +463,25 @@ function todayAt(h){const d=new Date();d.setHours(h,0,0,0);if(d<=new Date())d.se
 function openSchedulePicker(){closePopover();const d=new Date(Date.now()+3600e3);const local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);openModal('Schedule send',`<div class="field"><label>Send date and time</label><input id="scheduleAt" type="datetime-local" value="${local}" min="${new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16)}"></div>`,async modal=>{const v=modal.querySelector('#scheduleAt').value;if(!v)return;modal.closest('.modal-backdrop').remove();await sendComposer(new Date(v).toISOString());});}
 
 async function sendMail(payload){
-  try{const {data,error}=await supabase.functions.invoke('send-mail',{body:{...payload,to:splitAddr(payload.to),cc:splitAddr(payload.cc),bcc:splitAddr(payload.bcc)}});if(error)throw error;if(data?.error)throw new Error(data.error);if(payload.draft_id)await supabase.from('frankiflow_mail_messages').delete().eq('id',payload.draft_id);await rememberContacts(splitAddr(payload.to));toast(payload.scheduledAt?'Email scheduled':'Email sent',payload.scheduledAt?'schedule':'send');await loadAll();return true;}catch(e){toast(`Send failed: ${e.message}`,'error');return false;}
+  try{const {data,error}=await supabase.functions.invoke('send-mail',{body:{...payload,to:splitAddr(payload.to),cc:splitAddr(payload.cc),bcc:splitAddr(payload.bcc)}});if(error)throw error;if(data?.error)throw new Error(data.error);}
+  catch(error){toast(`Send failed: ${error.message}`,'error');return false;}
+  toast(payload.scheduledAt?'Email scheduled':'Email sent',payload.scheduledAt?'schedule':'send');
+  const warnings=[];
+  if(payload.draft_id){try{const {error}=await supabase.from('frankiflow_mail_messages').delete().eq('id',payload.draft_id).eq('folder','drafts');if(error)throw error;}catch{warnings.push('the old draft could not be removed');}}
+  try{await rememberContacts(splitAddr(payload.to));}catch{warnings.push('contacts could not be updated');}
+  try{if(await loadAll()===false)warnings.push('the mailbox could not be refreshed');}catch{warnings.push('the mailbox could not be refreshed');}
+  if(warnings.length)toast(`Email ${payload.scheduledAt?'scheduled':'sent'}, but ${warnings.join(' and ')}. Do not resend it.`,'warning');
+  return true;
 }
-async function rememberContacts(emails){for(const email of emails){const existing=state.contacts.find(c=>c.email.toLowerCase()===email.toLowerCase());if(existing)await supabase.from('frankiflow_mail_contacts').update({use_count:(existing.use_count||0)+1,last_used_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',existing.id);else await supabase.from('frankiflow_mail_contacts').insert({email,use_count:1,last_used_at:new Date().toISOString()});}}
+
+async function rememberContacts(emails){
+  for(const email of emails){
+    const existing=state.contacts.find(contact=>contact.email.toLowerCase()===email.toLowerCase());
+    const result=existing?await supabase.from('frankiflow_mail_contacts').update({use_count:(existing.use_count||0)+1,last_used_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',existing.id):await supabase.from('frankiflow_mail_contacts').insert({email,use_count:1,last_used_at:new Date().toISOString()});
+    if(result.error)throw result.error;
+  }
+}
+
 async function primaryAccount(){const {data,error}=await supabase.from('frankiflow_mail_accounts').select('*').eq('is_primary',true).single();if(error)throw error;return data;}
 
 function openSnooze(ids){openModal('Snooze message',`<div class="field"><label>Bring it back</label><select id="snoozeChoice"><option value="later">Later today · 18:00</option><option value="tomorrow">Tomorrow · 08:00</option><option value="week">Next week · Monday 08:00</option><option value="custom">Choose date & time</option></select></div><div class="field hidden" id="snoozeCustomWrap"><label>Date and time</label><input id="snoozeCustom" type="datetime-local"></div>`,async modal=>{const c=modal.querySelector('#snoozeChoice').value;let d;if(c==='later')d=new Date(todayAt(18));if(c==='tomorrow')d=new Date(tomorrowAt(8));if(c==='week'){d=new Date();d.setDate(d.getDate()+((8-d.getDay())%7||7));d.setHours(8,0,0,0);}if(c==='custom')d=new Date(modal.querySelector('#snoozeCustom').value);if(!d||isNaN(d))return;const {error}=await supabase.from('frankiflow_mail_messages').update({folder:'snoozed',snoozed_until:d.toISOString(),updated_at:new Date().toISOString()}).in('id',ids);if(error)return toast(error.message,'error');modal.closest('.modal-backdrop').remove();state.selected.clear();state.activeId=null;toast('Message snoozed','schedule');await loadAll();},modal=>{modal.querySelector('#snoozeChoice').onchange=e=>modal.querySelector('#snoozeCustomWrap').classList.toggle('hidden',e.target.value!=='custom');});}
@@ -484,8 +537,23 @@ function keyboardHandler(e){if(!state.session||state.commandOpen)return;const ta
 document.addEventListener('keydown',keyboardHandler);
 
 async function wakeSnoozed(){const due=state.messages.filter(m=>m.folder==='snoozed'&&m.snoozed_until&&new Date(m.snoozed_until)<=new Date()).map(m=>m.id);if(due.length)await supabase.from('frankiflow_mail_messages').update({folder:'inbox',snoozed_until:null,updated_at:new Date().toISOString()}).in('id',due);}
+async function refreshAttachmentIndicators(){
+  const version=++attachmentLoadVersion,owner=currentUser()?.id,messages=state.messages;
+  const ids=messages.map(message=>message.id);const chunks=[];
+  for(let i=0;i<ids.length;i+=100)chunks.push(ids.slice(i,i+100));
+  try{
+    const results=await Promise.all(chunks.map(chunk=>supabase.from('frankiflow_mail_attachments').select('message_id').in('message_id',chunk)));
+    if(version!==attachmentLoadVersion||owner!==currentUser()?.id||messages!==state.messages)return;
+    const known=new Set();
+    results.forEach((result,index)=>{if(result.error)chunks[index].forEach(id=>{if(state.attachmentMessageIds.has(id))known.add(id);});else(result.data||[]).forEach(row=>known.add(row.message_id));});
+    state.attachmentMessageIds=known;renderList();
+  }catch{/* The per-message reader reports attachment errors and offers Retry. */}
+}
+document.addEventListener('ffmail:attachments-loaded',event=>{const {messageId,count}=event.detail||{};if(count&&state.messages.some(message=>message.id===messageId)){state.attachmentMessageIds.add(messageId);renderList();}});
+
 async function loadAll(showToast=false){
-  if(!state.session)return;state.loading=true;
+  if(!state.session)return false;state.loading=true;const version=++mailboxLoadVersion,owner=currentUser().id;
+  try{
   const [m,a,l,ml,c,t,sg,s,f,ev]=await Promise.all([
     supabase.from('frankiflow_mail_messages').select('*').order('created_at',{ascending:false}).limit(1000),
     supabase.from('frankiflow_mail_accounts').select('*').order('is_primary',{ascending:false}),
@@ -498,9 +566,12 @@ async function loadAll(showToast=false){
     supabase.from('frankiflow_mail_filters').select('*').order('created_at'),
     supabase.from('frankiflow_mail_events').select('*').order('start_at',{ascending:true})
   ]);
-  const err=[m,a,l,ml,c,t,sg,s,f,ev].find(x=>x.error)?.error;if(err)return toast(err.message,'error');
+  if(version!==mailboxLoadVersion||owner!==currentUser()?.id)return false;
+  const err=[m,a,l,ml,c,t,sg,s,f,ev].find(x=>x.error)?.error;if(err)throw err;
   state.messages=m.data||[];state.accounts=a.data||[];state.labels=l.data||[];state.messageLabels=ml.data||[];state.contacts=c.data||[];state.templates=t.data||[];state.signatures=sg.data||[];state.settings=s.data||null;state.filters=f.data||[];state.events=ev.data||[];
-  await wakeSnoozed();await applyFilters();state.loading=false;renderApp();updateDocumentTitle();if(showToast)toast('Mailbox refreshed','refresh');
+  await wakeSnoozed();await applyFilters();state.loading=false;renderApp();updateDocumentTitle();if(showToast)toast('Mailbox refreshed','refresh');void refreshAttachmentIndicators();return true;
+  }catch(error){if(version===mailboxLoadVersion&&owner===currentUser()?.id)toast(`Mailbox refresh failed: ${error.message}`,'error');return false;}
+  finally{if(version===mailboxLoadVersion)state.loading=false;}
 }
 
 function pushSupported(){return typeof Notification!=='undefined'&&'serviceWorker' in navigator&&'PushManager' in window;}
@@ -592,7 +663,7 @@ async function setupRealtime(){if(state.realtimeChannel||!state.session)return;s
 async function teardownRealtime(){if(state.realtimeChannel){await supabase.removeChannel(state.realtimeChannel);state.realtimeChannel=null;}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)updateDocumentTitle();});
 
-supabase.auth.onAuthStateChange(async(_event,session)=>{state.session=session;if(session){await loadAll();await refreshPushStatus();consumeMessageDeepLink();await setupRealtime();}else{await teardownRealtime();loginView();}});
+supabase.auth.onAuthStateChange((_event,session)=>{state.session=session;setTimeout(async()=>{if(state.session!==session)return;if(session){await loadAll();await refreshPushStatus();consumeMessageDeepLink();await setupRealtime();}else{mailboxLoadVersion++;attachmentLoadVersion++;state.messages=[];state.accounts=[];state.attachmentMessageIds.clear();state.selected.clear();await teardownRealtime();loginView();}},0);});
 const {data:{session}}=await supabase.auth.getSession();
 state.session=session;
 if(session){await loadAll();await refreshPushStatus();consumeMessageDeepLink();await setupRealtime();}else loginView();
