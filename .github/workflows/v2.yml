@@ -42,6 +42,7 @@ jobs:
           done
           npm run test:e2e
           npm run test:contract
+          npm run test:improvements
       - name: Test deployed branch
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.deployment_url != '' }}
         env:
@@ -49,6 +50,7 @@ jobs:
         run: |
           node -e 'const u=new URL(process.env.BASE_URL); if(u.protocol!=="https:" || u.hostname!=="v2--frankiflow-mail.netlify.app" || u.username || u.password) throw new Error("Expected the v2 Netlify HTTPS branch URL")'
           npm run test:e2e
+          npm run test:improvements
       - uses: actions/upload-artifact@v4
         if: always()
         with:

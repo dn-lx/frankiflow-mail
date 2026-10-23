@@ -83,3 +83,86 @@ test("byte formatting handles small and large attachments", () => {
   assert.equal(formatBytes(2048), "2.0 KB");
   assert.equal(formatBytes(1048576), "1.0 MB");
 });
+
+test("display-name recipients and case-insensitive duplicates preserve valid addresses", () => {
+  assert.deepEqual(
+    recipients(
+      '"Wilson, Emma" <emma@example.com>; EMMA@example.com, Team <team@example.com>',
+    ),
+    ["emma@example.com", "team@example.com"],
+  );
+  assert.equal(validRecipients("Emma Wilson <emma@example.com>"), true);
+  assert.deepEqual(recipients(null), []);
+});
+
+test("reply-all excludes all authorized aliases, duplicates and original Bcc recipients", async () => {
+  const { replyRecipients } = await import("../src/lib/mail-utils.mjs");
+  const mail = {
+    ...message,
+    direction: "inbound",
+    from_address: "sender@example.com",
+    reply_to: "reply@example.com",
+    to_addresses: ["info@example.com", "guest@example.com"],
+    cc_addresses: [
+      "ALEX@example.com",
+      "guest@example.com",
+      "other@example.com",
+    ],
+    bcc_addresses: ["hidden@example.com"],
+  };
+  assert.deepEqual(
+    replyRecipients(
+      mail,
+      [{ address: "alex@example.com" }, { address: "info@example.com" }],
+      true,
+    ),
+    {
+      to: ["reply@example.com"],
+      cc: ["guest@example.com", "other@example.com"],
+    },
+  );
+});
+
+test("replies use the original authorized shared account before the default account", async () => {
+  const { fromAddressForMessage } = await import("../src/lib/mail-utils.mjs");
+  const accounts = [
+    { id: "personal", address: "alex@example.com", is_primary: true },
+    { id: "shared", address: "info@example.com" },
+  ];
+  assert.equal(
+    fromAddressForMessage({ ...message, account_id: "shared" }, accounts),
+    "info@example.com",
+  );
+  assert.equal(
+    fromAddressForMessage(
+      {
+        ...message,
+        from_address: "guest@example.com",
+        to_addresses: ["INFO@example.com"],
+      },
+      accounts,
+    ),
+    "info@example.com",
+  );
+});
+
+test("search supports quoted subject phrases, read status and date boundaries", () => {
+  const mail = {
+    ...message,
+    subject: "Q4 project proposal",
+    created_at: "2026-10-01T12:00:00Z",
+  };
+  assert.equal(
+    filterMessages(
+      [mail],
+      "sent",
+      'subject:"project proposal" is:read after:2026-10-01 before:2026-10-02',
+    ).length,
+    1,
+  );
+  assert.equal(
+    filterMessages([mail], "sent", 'subject:"proposal project"').length,
+    0,
+  );
+  assert.equal(filterMessages([mail], "sent", "before:2026-10-01").length, 0);
+});

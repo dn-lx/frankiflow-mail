@@ -15,13 +15,23 @@ const mail = {
   from_address: "alex@example.com",
   to_addresses: ["emma@example.com"],
   subject: "Sent attachment with stale flag",
-  text_body: "Contract test",
+  text_body: "",
+  html_body: "<p>Contract <strong>test</strong></p>",
   folder: "sent",
   direction: "outbound",
   is_read: true,
   is_starred: false,
   has_attachments: false,
   created_at: new Date().toISOString(),
+  account_id: "44444444-4444-4444-8444-444444444444",
+  thread_id: "thread-original",
+  provider_message_id: "provider-original",
+  cc_addresses: [
+    "alex@example.com",
+    "info@example.com",
+    "colleague@example.com",
+  ],
+  bcc_addresses: ["hidden@example.com"],
 };
 const account = {
   id: "22222222-2222-4222-8222-222222222222",
@@ -29,6 +39,22 @@ const account = {
   display_name: "Alex",
   is_primary: true,
 };
+const shared = {
+  id: "44444444-4444-4444-8444-444444444444",
+  address: "info@example.com",
+  display_name: "Shared mailbox",
+};
+const draft = {
+  ...mail,
+  id: "55555555-5555-4555-8555-555555555555",
+  folder: "drafts",
+  direction: "draft",
+  subject: "Server draft cleanup test",
+};
+let includeDraft = false,
+  failCleanup = false,
+  failDownload = true,
+  messageWrites = 0;
 let sentPayload,
   failSend = true,
   failSign = true,
@@ -61,12 +87,20 @@ await page.route("https://*.supabase.co/**", async (route) => {
       user,
     });
   if (url.pathname === "/auth/v1/user") return fulfill(user);
-  if (url.pathname === "/rest/v1/frankiflow_mail_messages")
-    return fulfill([mail]);
+  if (url.pathname === "/rest/v1/frankiflow_mail_messages") {
+    if (req.method() === "DELETE")
+      return failCleanup
+        ? fulfill({ message: "Draft cleanup denied" }, 403)
+        : fulfill({});
+    if (req.method() !== "GET") messageWrites++;
+    return fulfill(includeDraft ? [mail, draft] : [mail]);
+  }
   if (url.pathname === "/rest/v1/frankiflow_mail_accounts")
-    return fulfill([account]);
+    return fulfill([account, shared]);
   if (url.pathname === "/rest/v1/frankiflow_mail_attachments") {
     attachmentReads++;
+    if (url.searchParams.get("message_id") === `eq.${draft.id}`)
+      return fulfill([]);
     return fulfill([
       {
         id: "file-1",
@@ -76,6 +110,15 @@ await page.route("https://*.supabase.co/**", async (route) => {
         storage_path: "test/contract.txt",
       },
     ]);
+  }
+  if (url.pathname.startsWith("/storage/v1/object/frankiflow-mail-attachments/")) {
+    if (failDownload)
+      return fulfill({ message: "Original attachment download denied" }, 403);
+    return route.fulfill({
+      status: 200,
+      contentType: "text/plain",
+      body: "Contract test",
+    });
   }
   if (url.pathname.startsWith("/storage/v1/object/sign/"))
     return failSign
@@ -136,13 +179,11 @@ try {
   await page
     .getByRole("textbox", { name: "Message body" })
     .fill("Attached bytes");
-  await page
-    .locator("input[type=file]")
-    .setInputFiles({
-      name: "bytes.bin",
-      mimeType: "application/octet-stream",
-      buffer: Buffer.from([0, 255, 1, 254, 128]),
-    });
+  await page.locator("input[type=file]").setInputFiles({
+    name: "bytes.bin",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from([0, 255, 1, 254, 128]),
+  });
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   await page.getByRole("dialog").getByRole("alert").waitFor();
   assert.equal(
@@ -169,6 +210,131 @@ try {
   await page.getByRole("status").filter({ hasText: "Email sent." }).waitFor();
   console.log(
     "PASS successful authenticated send closes composer and refreshes Sent",
+  );
+  await page.locator(".row-content").filter({ hasText: mail.subject }).click();
+  await page.getByRole("button", { name: "Reply all", exact: true }).click();
+  assert.equal(
+    await page.getByRole("textbox", { name: "To", exact: true }).inputValue(),
+    "emma@example.com",
+  );
+  assert.equal(
+    await page.getByRole("textbox", { name: "Cc", exact: true }).inputValue(),
+    "colleague@example.com",
+  );
+  assert.equal(
+    await page.getByRole("textbox", { name: "Bcc", exact: true }).inputValue(),
+    "",
+  );
+  assert.equal(
+    await page
+      .getByRole("combobox", { name: "From", exact: true })
+      .inputValue(),
+    shared.address,
+  );
+  await page
+    .getByRole("textbox", { name: "Message body" })
+    .fill("A reply in the original thread");
+  failSend = true;
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByRole("dialog").getByRole("alert").waitFor();
+  assert.equal(sentPayload.thread_id, mail.thread_id);
+  assert.equal(sentPayload.in_reply_to, mail.provider_message_id);
+  assert.equal(sentPayload.fromAddress, shared.address);
+  assert.deepEqual(sentPayload.cc, ["colleague@example.com"]);
+  await page
+    .getByRole("button", { name: "Discard message", exact: true })
+    .click();
+  console.log(
+    "PASS reply-all preserves shared sender and thread headers while excluding our aliases and original Bcc",
+  );
+
+  await page
+    .getByRole("button", { name: "Forward with attachments", exact: true })
+    .click();
+  await page
+    .getByRole("alert")
+    .filter({ hasText: "Could not forward message" })
+    .waitFor();
+  assert.equal(await page.getByRole("dialog").count(), 0);
+  failDownload = false;
+  failSend = false;
+  await page
+    .getByRole("button", { name: "Forward with attachments", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "To", exact: true })
+    .fill("forward@example.com");
+  assert.match(await page.getByRole("textbox",{name:"Message body"}).inputValue(), /Contract test/);
+  await page
+    .getByRole("button", { name: "Remove contract.txt", exact: true })
+    .waitFor();
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  assert.equal(
+    Buffer.from(sentPayload.attachments[0].content, "base64").toString(),
+    "Contract test",
+  );
+  console.log(
+    "PASS authenticated forwarding blocks missing files and preserves downloaded attachment bytes",
+  );
+
+  await page.getByRole("button", { name: "New message", exact: false }).click();
+  await page
+    .getByRole("textbox", { name: "To", exact: true })
+    .fill("recover@example.com");
+  await page
+    .getByRole("textbox", { name: "Subject", exact: true })
+    .fill("Recover authenticated attachment");
+  await page
+    .locator("input[type=file]")
+    .setInputFiles({
+      name: "device.bin",
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from([1, 2, 128, 255]),
+    });
+  await page
+    .getByRole("button", { name: "Close and save draft", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Resume draft", exact: false })
+    .waitFor();
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Resume draft", exact: false })
+    .click();
+  await page
+    .getByRole("button", { name: "Remove device.bin", exact: true })
+    .waitFor();
+  assert.equal(messageWrites, 0);
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  assert.deepEqual(
+    [...Buffer.from(sentPayload.attachments[0].content, "base64")],
+    [1, 2, 128, 255],
+  );
+  console.log(
+    "PASS authenticated attachments recover locally without inventing backend draft-storage APIs",
+  );
+
+  includeDraft = true;
+  failCleanup = true;
+  await page
+    .getByRole("button", { name: "Refresh mailbox", exact: true })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Mail folders" })
+    .getByRole("button", { name: /^Drafts/ })
+    .click();
+  await page.locator(".row-content").filter({ hasText: draft.subject }).click();
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  await page
+    .getByRole("alert")
+    .filter({ hasText: "Email sent, but the old draft could not be removed" })
+    .waitFor();
+  await page.getByRole("status").filter({ hasText: "Email sent." }).waitFor();
+  console.log(
+    "PASS draft-cleanup failure remains visible after refresh and does not report delivery as failed",
   );
 } finally {
   await browser.close();

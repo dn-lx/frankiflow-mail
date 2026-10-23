@@ -1848,3 +1848,133 @@ kbd {
     scroll-behavior: auto !important;
   }
 }
+
+/* Compose recovery and reversible mailbox actions. */
+.composer-content {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: auto;
+}
+.composer-content:disabled {
+  opacity: 0.7;
+}
+.composer-content .compose-body {
+  flex: 1;
+  min-height: 230px;
+}
+.recovery-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  margin-bottom: 15px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.recovery-icon {
+  width: 32px;
+  height: 32px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+}
+.recovery-banner > div {
+  min-width: 0;
+  flex: 1;
+}
+.recovery-banner strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+}
+.recovery-banner small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.5;
+  margin-top: 4px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recovery-banner .secondary-button {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.message-response-actions {
+  display: flex;
+  gap: 9px;
+  margin: 13px 0 0 37px;
+  flex-wrap: wrap;
+}
+.message-response-actions .secondary-button {
+  color: var(--muted);
+}
+.toast .undo-button {
+  margin-left: 5px;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 12px;
+  border-left: 1px solid var(--border);
+  padding: 0 4px 0 12px;
+  white-space: nowrap;
+}
+.composer-hint {
+  line-height: 1.5;
+}
+.composer .compose-error {
+  flex-shrink: 0;
+}
+@media (max-width: 640px) {
+  .recovery-banner {
+    padding: 10px;
+    gap: 8px;
+  }
+  .recovery-icon {
+    display: none;
+  }
+  .recovery-banner strong {
+    font-size: 10px;
+  }
+  .recovery-banner small {
+    font-size: 9px;
+  }
+  .recovery-banner .secondary-button {
+    font-size: 9px;
+    padding: 9px;
+  }
+  .message-response-actions {
+    margin-left: 0;
+  }
+  .message-response-actions .secondary-button {
+    font-size: 10px;
+  }
+  .composer-content .compose-body {
+    min-height: 200px;
+  }
+  .composer-hint {
+    display: block;
+    font-size: 8px;
+  }
+  .toast {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .toast .undo-button {
+    font-size: 11px;
+  }
+}

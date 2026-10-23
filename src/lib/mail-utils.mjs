@@ -1,6 +1,19 @@
 export function recipients(value = "") {
-  const items = Array.isArray(value) ? value : String(value).split(/[,;\n]+/);
-  return [...new Set(items.map((x) => String(x).trim()).filter(Boolean))];
+  const values = Array.isArray(value) ? value : [value];
+  const result = [],
+    seen = new Set();
+  for (const value of values) {
+    const tokens =
+      String(value ?? "").match(/(?:"[^"]*"|<[^>]*>|[^,;\n])+/g) || [];
+    for (const token of tokens) {
+      const address = (token.match(/<([^<>]+)>/)?.[1] || token).trim();
+      if (address && !seen.has(address.toLowerCase())) {
+        seen.add(address.toLowerCase());
+        result.push(address);
+      }
+    }
+  }
+  return result;
 }
 export function validRecipients(value) {
   const list = recipients(value);
@@ -10,7 +23,9 @@ export function validRecipients(value) {
   );
 }
 export function filterMessages(messages, folder, query = "", unread = false) {
-  const tokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const tokens = (query.toLowerCase().match(/(?:[^\s"]+|"[^"]*")+/g) || []).map(
+    (token) => token.replaceAll('"', ""),
+  );
   return messages
     .filter((m) => {
       if (
@@ -20,27 +35,24 @@ export function filterMessages(messages, folder, query = "", unread = false) {
       )
         return false;
       if (unread && m.is_read) return false;
+      const to = recipients(m.to_addresses).join(" ").toLowerCase();
+      const from = String(m.from_address || "").toLowerCase();
+      const subject = String(m.subject || "").toLowerCase();
       return tokens.every((token) => {
         if (token === "is:unread") return !m.is_read;
+        if (token === "is:read") return m.is_read;
         if (token === "is:starred") return m.is_starred;
         if (token === "has:attachment")
           return m.has_attachments || m.attachments?.length > 0;
-        if (token.startsWith("from:"))
-          return m.from_address.toLowerCase().includes(token.slice(5));
-        if (token.startsWith("to:"))
-          return m.to_addresses
-            .join(" ")
-            .toLowerCase()
-            .includes(token.slice(3));
+        if (token.startsWith("from:")) return from.includes(token.slice(5));
+        if (token.startsWith("to:")) return to.includes(token.slice(3));
         if (token.startsWith("subject:"))
-          return m.subject.toLowerCase().includes(token.slice(8));
-        return [
-          m.subject,
-          m.from_name,
-          m.from_address,
-          m.text_body,
-          ...m.to_addresses,
-        ]
+          return subject.includes(token.slice(8));
+        if (token.startsWith("before:"))
+          return Date.parse(m.created_at) < Date.parse(token.slice(7));
+        if (token.startsWith("after:"))
+          return Date.parse(m.created_at) >= Date.parse(token.slice(6));
+        return [subject, m.from_name, from, m.text_body, to]
           .join(" ")
           .toLowerCase()
           .includes(token);
@@ -62,16 +74,42 @@ export function formatBytes(size = 0) {
       ? `${(size / 1024).toFixed(1)} KB`
       : `${(size / 1048576).toFixed(1)} MB`;
 }
-export function replyTargets(message, accounts) {
+export function replyRecipients(message, accounts, all = false) {
   const own = new Set(accounts.map((a) => a.address.toLowerCase()));
-  if (
-    own.has(message.from_address.toLowerCase()) ||
-    message.direction === "outbound"
-  )
-    return recipients(message.to_addresses).filter(
-      (a) => !own.has(a.toLowerCase()),
-    );
-  return recipients(message.reply_to || message.from_address).filter(
-    (a) => !own.has(a.toLowerCase()),
+  const outgoing =
+    own.has(String(message.from_address || "").toLowerCase()) ||
+    message.direction === "outbound";
+  const to = recipients(
+    outgoing ? message.to_addresses : message.reply_to || message.from_address,
+  ).filter((a) => !own.has(a.toLowerCase()));
+  const toSet = new Set(to.map((a) => a.toLowerCase()));
+  const cc = all
+    ? recipients([
+        ...(outgoing ? [] : recipients(message.to_addresses)),
+        ...recipients(message.cc_addresses),
+      ]).filter((a) => !own.has(a.toLowerCase()) && !toSet.has(a.toLowerCase()))
+    : [];
+  return { to, cc };
+}
+export function replyTargets(message, accounts) {
+  return replyRecipients(message, accounts).to;
+}
+export function fromAddressForMessage(message, accounts) {
+  return (
+    accounts.find((a) => a.id === message.account_id)?.address ||
+    accounts.find(
+      (a) =>
+        a.address.toLowerCase() ===
+        String(message.from_address || "").toLowerCase(),
+    )?.address ||
+    accounts.find((a) =>
+      recipients([
+        ...recipients(message.to_addresses),
+        ...recipients(message.cc_addresses),
+      ]).some((address) => address.toLowerCase() === a.address.toLowerCase()),
+    )?.address ||
+    accounts.find((a) => a.is_primary)?.address ||
+    accounts[0]?.address ||
+    ""
   );
 }

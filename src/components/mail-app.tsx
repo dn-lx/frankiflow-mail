@@ -25,6 +25,9 @@ import {
   PenLine,
   Plus,
   Search,
+  ReplyAll,
+  RotateCcw,
+  Undo2,
   Send,
   Settings,
   ShieldCheck,
@@ -35,12 +38,15 @@ import {
   X,
 } from "lucide-react";
 import { getSupabase, attachmentBucket } from "@/lib/supabase";
+import { useDraftRecovery } from "@/hooks/use-draft-recovery";
+import { attachmentFiles, encodeFiles, messageText } from "@/lib/attachments";
 import { demoAccounts, demoMessages } from "@/lib/demo";
 import {
   filterMessages,
   formatBytes,
   recipients,
-  replyTargets,
+  replyRecipients,
+  fromAddressForMessage,
   validRecipients,
   validateFiles,
 } from "@/lib/mail-utils.mjs";
@@ -77,6 +83,7 @@ const errorText = (e: unknown) =>
       ? String(e.message)
       : "Something went wrong. Please try again.";
 const storageKey = "frankiflow-demo-v2";
+type MoveSnapshot = Pick<Message, "id" | "folder" | "trashed_at">;
 
 export default function MailApp({ demo = false }: { demo?: boolean }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -94,6 +101,16 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   const [composer, setComposer] = useState<Compose | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const sendingLock = useRef(false);
+  const [forwarding, setForwarding] = useState(false);
+  const [mutationBusy, setMutationBusy] = useState(false);
+  const mutationLock = useRef(false);
+  const [undo, setUndo] = useState<MoveSnapshot[] | null>(null);
+  const recovery = useDraftRecovery(
+    demo ? "demo" : session?.user.id || null,
+    composer,
+    files,
+  );
   const [dark, setDark] = useState(false);
   const [settings, setSettings] = useState(false);
   const [sidebar, setSidebar] = useState(false);
@@ -179,6 +196,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         setSelected(new Set());
         setComposer(null);
         setFiles([]);
+        setUndo(null);
         setBusy(false);
       }
       setSession(s);
@@ -298,12 +316,44 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   }, [messages, demo]);
   useEffect(() => {
     if (!notice) return;
-    const timer = setTimeout(() => setNotice(""), 5000);
+    const timer = setTimeout(
+      () => {
+        setNotice("");
+        setUndo(null);
+      },
+      undo ? 10000 : 5000,
+    );
     return () => clearTimeout(timer);
-  }, [notice]);
+  }, [notice, undo]);
 
-  function newMessage(seed: Partial<Compose> = {}) {
-    setFiles([]);
+  function resumeRecovery() {
+    if (!recovery.saved) return;
+    setComposer(recovery.saved.compose);
+    setFiles(recovery.saved.files);
+    setCcVisible(
+      Boolean(recovery.saved.compose.cc || recovery.saved.compose.bcc),
+    );
+    setError("");
+  }
+  function newMessage(seed: Partial<Compose> = {}, initialFiles: File[] = []) {
+    if (!recovery.ready) {
+      setNotice("Checking for unsent drafts. Please try again in a moment.");
+      return false;
+    }
+    if (composer) {
+      setNotice(
+        "Save or discard the open draft before starting another message.",
+      );
+      return false;
+    }
+    if (recovery.saved) {
+      resumeRecovery();
+      setNotice(
+        "Your unsent draft is open. Save or discard it before starting another message.",
+      );
+      return false;
+    }
+    setFiles(initialFiles);
     setCcVisible(Boolean(seed.cc || seed.bcc));
     setComposer({
       to: "",
@@ -315,6 +365,55 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       ...seed,
     });
     setError("");
+    return true;
+  }
+  function reply(all = false) {
+    if (!message) return;
+    const targets = replyRecipients(message, accounts, all);
+    if (!targets.to.length) {
+      setError("No valid reply recipient was found.");
+      return;
+    }
+    newMessage({
+      to: targets.to.join(", "),
+      cc: targets.cc.join(", "),
+      fromAddress: fromAddressForMessage(message, accounts),
+      subject: /^re:/i.test(message.subject)
+        ? message.subject
+        : `Re: ${message.subject}`,
+      thread_id: message.thread_id,
+      in_reply_to: message.provider_message_id,
+    });
+  }
+  async function forward() {
+    if (!message || forwarding) return;
+    if (composer || recovery.saved) {
+      newMessage();
+      return;
+    }
+    setForwarding(true);
+    setError("");
+    try {
+      const originalFiles = await attachmentFiles(
+        message,
+        demo,
+        attachmentCache.current,
+      );
+      newMessage(
+        {
+          subject: /^fwd:/i.test(message.subject)
+            ? message.subject
+            : `Fwd: ${message.subject}`,
+          fromAddress: fromAddressForMessage(message, accounts),
+          text: `\n\n---------- Forwarded message ----------\nFrom: ${message.from_address}\nTo: ${message.to_addresses.join(", ")}\nDate: ${date(message.created_at)}\nSubject: ${message.subject}\n\n${messageText(message)}`,
+        },
+        originalFiles,
+      );
+    } catch (e) {
+      setError(`Could not forward message: ${errorText(e)}`);
+    } finally {
+      setForwarding(false);
+    }
   }
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -347,43 +446,128 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   });
 
   async function patch(ids: string[], updates: Partial<Message>) {
+    if (mutationLock.current) return false;
+    mutationLock.current = true;
+    setMutationBusy(true);
     setError("");
+    const snapshots = messages
+      .filter((m) => ids.includes(m.id))
+      .map(({ id, folder, trashed_at }) => ({
+        id,
+        folder,
+        trashed_at: trashed_at || null,
+      }));
+    const owner = sessionUser.current;
+    const changes = {
+      ...updates,
+      ...(updates.folder
+        ? {
+            trashed_at:
+              updates.folder === "trash" ? new Date().toISOString() : null,
+          }
+        : {}),
+    };
     try {
       if (!demo) {
         const { error } = await getSupabase()
           .from("frankiflow_mail_messages")
-          .update({
-            ...updates,
-            ...(updates.folder === "trash"
-              ? { trashed_at: new Date().toISOString() }
-              : {}),
-            updated_at: new Date().toISOString(),
-          })
+          .update({ ...changes, updated_at: new Date().toISOString() })
           .in("id", ids);
         if (error) throw error;
+        if (owner !== sessionUser.current) return false;
       }
       setMessages((previous) =>
-        previous.map((m) => (ids.includes(m.id) ? { ...m, ...updates } : m)),
+        previous.map((m) => (ids.includes(m.id) ? { ...m, ...changes } : m)),
       );
       setSelected(new Set());
       if (updates.folder) {
         setActive(null);
-        setNotice(`Moved to ${updates.folder}.`);
+        setUndo(snapshots);
+        setNotice(
+          `Moved ${ids.length === 1 ? "message" : `${ids.length} messages`} to ${updates.folder}.`,
+        );
       }
+      return true;
     } catch (e) {
       setError(errorText(e));
+      return false;
+    } finally {
+      mutationLock.current = false;
+      setMutationBusy(false);
+    }
+  }
+  async function undoMove() {
+    if (!undo || mutationLock.current) return;
+    const snapshots = undo;
+    const owner = sessionUser.current;
+    mutationLock.current = true;
+    setMutationBusy(true);
+    setError("");
+    try {
+      const results = await Promise.all(
+        snapshots.map(async (snapshot) => {
+          if (demo) return { snapshot, error: null };
+          const { error } = await getSupabase()
+            .from("frankiflow_mail_messages")
+            .update({
+              folder: snapshot.folder,
+              trashed_at: snapshot.trashed_at || null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", snapshot.id);
+          return { snapshot, error };
+        }),
+      );
+      if (!demo && owner !== sessionUser.current) return;
+      const restored = new Map(
+        results.filter((r) => !r.error).map((r) => [r.snapshot.id, r.snapshot]),
+      );
+      setMessages((previous) =>
+        previous.map((m) =>
+          restored.has(m.id) ? { ...m, ...restored.get(m.id)! } : m,
+        ),
+      );
+      const failed = results.filter((r) => r.error);
+      setUndo(failed.length ? failed.map((r) => r.snapshot) : null);
+      if (failed.length) {
+        setError(
+          `Some messages could not be restored: ${errorText(failed[0].error)}`,
+        );
+        setNotice(
+          "Restored available messages. Retry Undo for the remaining messages.",
+        );
+      } else setNotice("Move undone.");
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      mutationLock.current = false;
+      setMutationBusy(false);
     }
   }
   async function openMessage(m: Message) {
+    if (!m) return;
     if (m.folder === "drafts") {
-      newMessage({
-        id: m.id,
-        to: m.to_addresses.join(", "),
-        cc: m.cc_addresses?.join(", ") || "",
-        subject: m.subject,
-        text: m.text_body,
-        fromAddress: m.from_address,
-      });
+      try {
+        const draftFiles = await attachmentFiles(
+          m,
+          demo,
+          attachmentCache.current,
+        );
+        newMessage(
+          {
+            id: m.id,
+            to: m.to_addresses.join(", "),
+            cc: m.cc_addresses?.join(", ") || "",
+            bcc: m.bcc_addresses?.join(", ") || "",
+            subject: m.subject,
+            text: m.text_body,
+            fromAddress: m.from_address,
+          },
+          draftFiles,
+        );
+      } catch (e) {
+        setError(`Could not open draft: ${errorText(e)}`);
+      }
       return;
     }
     setActive(m.id);
@@ -410,14 +594,34 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
   async function saveDraft() {
     if (!composer) return;
     const data = composer;
-    if (!data.to && !data.subject && !data.text && !files.length) {
+    if (
+      !data.to &&
+      !data.cc &&
+      !data.bcc &&
+      !data.subject &&
+      !data.text &&
+      !files.length
+    ) {
+      await recovery.clear().catch(() => {});
       setComposer(null);
       return;
     }
-    if (files.length) {
-      setError(
-        "Attachments stay in the open composer. Send them or remove them before saving this text draft.",
-      );
+    if (files.length && !demo) {
+      setSending(true);
+      try {
+        await recovery.save(data, files);
+        setComposer(null);
+        setFiles([]);
+        setNotice(
+          "Draft and attachments kept on this device. Resume it from the recovery banner.",
+        );
+      } catch {
+        setError(
+          "The draft could not be saved. Keep the composer open to avoid losing its attachments.",
+        );
+      } finally {
+        setSending(false);
+      }
       return;
     }
     setSending(true);
@@ -438,6 +642,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         updated_at: new Date().toISOString(),
       };
       if (demo) {
+        const encoded = await encodeFiles(files);
         const id = data.id || crypto.randomUUID();
         setMessages((prev) => [
           {
@@ -445,9 +650,15 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
             id,
             from_name: "Alex Morgan",
             is_starred: false,
-            has_attachments: false,
+            has_attachments: files.length > 0,
             created_at: new Date().toISOString(),
-            attachments: [],
+            attachments: encoded.map((file, index) => ({
+              id: crypto.randomUUID(),
+              filename: file.filename,
+              content_type: file.contentType,
+              size_bytes: files[index].size,
+              dataUrl: `data:${file.contentType};base64,${file.content}`,
+            })),
           },
           ...prev.filter((m) => m.id !== id),
         ]);
@@ -461,7 +672,13 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         if (result.error) throw result.error;
         await load();
       }
+      await recovery.clear().catch(() => {
+        setError(
+          "Draft saved, but its device recovery copy could not be cleared.",
+        );
+      });
       setComposer(null);
+      setFiles([]);
       setNotice("Draft saved.");
     } catch (e) {
       setError(errorText(e));
@@ -469,9 +686,40 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       setSending(false);
     }
   }
+  async function discardComposer() {
+    if (!composer || sendingLock.current) return;
+    sendingLock.current = true;
+    setSending(true);
+    setError("");
+    const id = composer.id;
+    try {
+      if (id && !demo) {
+        const { error } = await getSupabase()
+          .from("frankiflow_mail_messages")
+          .delete()
+          .eq("id", id)
+          .eq("folder", "drafts");
+        if (error) throw error;
+      }
+      await recovery.clear().catch(() => {
+        setError(
+          "Draft discarded, but its recovery copy could not be removed from device storage.",
+        );
+      });
+      if (id) setMessages((previous) => previous.filter((m) => m.id !== id));
+      setComposer(null);
+      setFiles([]);
+      setNotice("Draft discarded.");
+    } catch (e) {
+      setError(`Could not discard draft: ${errorText(e)}`);
+    } finally {
+      sendingLock.current = false;
+      setSending(false);
+    }
+  }
   async function send(e: React.FormEvent) {
     e.preventDefault();
-    if (!composer || sending) return;
+    if (!composer || sendingLock.current) return;
     if (
       !validRecipients(composer.to) ||
       [composer.cc, composer.bcc].some((v) => v.trim() && !validRecipients(v))
@@ -488,22 +736,12 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
       setError(fileError);
       return;
     }
+    sendingLock.current = true;
     setSending(true);
     setError("");
+    let deliveryWarning = "";
     try {
-      const attachments = await Promise.all(
-        files.map(async (file) => {
-          const bytes = new Uint8Array(await file.arrayBuffer());
-          let binary = "";
-          for (let i = 0; i < bytes.length; i += 32768)
-            binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
-          return {
-            filename: file.name,
-            content: btoa(binary),
-            contentType: file.type || "application/octet-stream",
-          };
-        }),
-      );
+      const attachments = await encodeFiles(files);
       if (demo) {
         const sent: Message = {
           id: crypto.randomUUID(),
@@ -511,6 +749,8 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           from_address: composer.fromAddress,
           to_addresses: recipients(composer.to),
           cc_addresses: recipients(composer.cc),
+          bcc_addresses: recipients(composer.bcc),
+          thread_id: composer.thread_id,
           subject: composer.subject,
           text_body: composer.text,
           folder: "sent",
@@ -558,17 +798,22 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
             .eq("id", composer.id)
             .eq("folder", "drafts");
           if (cleanup.error)
-            setError(
-              "Email sent, but the old draft could not be removed. Refresh before sending again.",
-            );
+            deliveryWarning =
+              "Email sent, but the old draft could not be removed. Refresh before sending again.";
         }
         attachmentCache.current.clear();
         await load();
         setFolder("sent");
         setActive(null);
       }
+      await recovery.clear().catch(() => {
+        deliveryWarning =
+          "Email sent, but the device recovery copy could not be removed. Discard it if it reappears.";
+      });
+      if (deliveryWarning) setError(deliveryWarning);
       setComposer(null);
       setFiles([]);
+      setUnreadOnly(false);
       setNotice(
         demo
           ? "Demo message saved to Sent. No email was delivered."
@@ -577,6 +822,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
     } catch (e) {
       setError(`Send failed: ${errorText(e)}`);
     } finally {
+      sendingLock.current = false;
       setSending(false);
     }
   }
@@ -616,7 +862,11 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
           </span>
           <ChevronDown size={15} />
         </button>
-        <button className="compose-button" onClick={() => newMessage()}>
+        <button
+          className="compose-button"
+          disabled={!recovery.ready}
+          onClick={() => newMessage()}
+        >
           <Plus size={19} />
           New message<span>C</span>
         </button>
@@ -766,6 +1016,27 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
             </a>
           </div>
         )}
+        {recovery.saved && !composer && (
+          <div className="recovery-banner" role="status">
+            <span className="recovery-icon">
+              <PenLine size={18} />
+            </span>
+            <div>
+              <strong>Your unsent draft is here</strong>
+              <small>
+                {recovery.saved.compose.subject || "Untitled message"}
+                {recovery.saved.files.length
+                  ? ` · ${recovery.saved.files.length} attachment${recovery.saved.files.length === 1 ? "" : "s"}`
+                  : ""}{" "}
+                · saved on this device
+              </small>
+            </div>
+            <button className="secondary-button" onClick={resumeRecovery}>
+              Resume draft
+              <ArrowUpRight size={14} />
+            </button>
+          </div>
+        )}
         {error && (
           <div className="error-banner" role="alert">
             <span>{error}</span>
@@ -856,6 +1127,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                   <button
                     className="icon-button"
                     aria-label="Archive selected"
+                    disabled={mutationBusy}
                     onClick={() =>
                       void patch([...selected], { folder: "archive" })
                     }
@@ -865,6 +1137,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                   <button
                     className="icon-button"
                     aria-label="Delete selected"
+                    disabled={mutationBusy}
                     onClick={() =>
                       void patch([...selected], { folder: "trash" })
                     }
@@ -874,6 +1147,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                   <button
                     className="icon-button"
                     aria-label="Mark selected as read"
+                    disabled={mutationBusy}
                     onClick={() => void patch([...selected], { is_read: true })}
                   >
                     <CheckCheck size={16} />
@@ -915,6 +1189,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                       <button
                         className={`star-button ${m.is_starred ? "starred" : ""}`}
                         aria-label={`${m.is_starred ? "Unstar" : "Star"} ${m.subject}`}
+                        disabled={mutationBusy}
                         aria-pressed={m.is_starred}
                         onClick={() =>
                           void patch([m.id], { is_starred: !m.is_starred })
@@ -1013,17 +1288,37 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 <span className="reader-tool-group">
                   <button
                     className="icon-button"
-                    aria-label="Archive message"
-                    title="Archive"
+                    aria-label={
+                      message.folder === "trash" || message.folder === "spam"
+                        ? "Restore message to Inbox"
+                        : "Archive message"
+                    }
+                    title={
+                      message.folder === "trash" || message.folder === "spam"
+                        ? "Restore to Inbox"
+                        : "Archive"
+                    }
+                    disabled={mutationBusy}
                     onClick={() =>
-                      void patch([message.id], { folder: "archive" })
+                      void patch([message.id], {
+                        folder:
+                          message.folder === "trash" ||
+                          message.folder === "spam"
+                            ? "inbox"
+                            : "archive",
+                      })
                     }
                   >
-                    <Archive size={18} />
+                    {message.folder === "trash" || message.folder === "spam" ? (
+                      <RotateCcw size={18} />
+                    ) : (
+                      <Archive size={18} />
+                    )}
                   </button>
                   <button
                     className="icon-button"
                     aria-label="Move message to trash"
+                    disabled={mutationBusy}
                     title="Move to trash"
                     onClick={() =>
                       void patch([message.id], { folder: "trash" })
@@ -1034,10 +1329,14 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                   <button
                     className="icon-button"
                     aria-label="Mark unread"
+                    disabled={mutationBusy}
                     title="Mark unread"
                     onClick={() => {
-                      void patch([message.id], { is_read: false });
-                      setActive(null);
+                      void patch([message.id], { is_read: false }).then(
+                        (ok) => {
+                          if (ok) setActive(null);
+                        },
+                      );
                     }}
                   >
                     <Mail size={18} />
@@ -1045,6 +1344,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                   <button
                     className={`icon-button ${message.is_starred ? "starred" : ""}`}
                     aria-label="Toggle message star"
+                    disabled={mutationBusy}
                     onClick={() =>
                       void patch([message.id], {
                         is_starred: !message.is_starred,
@@ -1136,17 +1436,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                   <span className="avatar small-avatar">
                     {demo ? "AM" : initials(ownAddress || "User")}
                   </span>
-                  <button
-                    onClick={() =>
-                      newMessage({
-                        to: replyTargets(message, accounts).join(", "),
-                        subject: /^re:/i.test(message.subject)
-                          ? message.subject
-                          : `Re: ${message.subject}`,
-                        thread_id: message.thread_id,
-                      })
-                    }
-                  >
+                  <button onClick={() => reply()}>
                     <PenLine size={16} />
                     Write a thoughtful reply…
                     <span>
@@ -1155,18 +1445,29 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                     </span>
                   </button>
                 </div>
-                <button
-                  className="text-button"
-                  onClick={() =>
-                    newMessage({
-                      subject: `Fwd: ${message.subject}`,
-                      text: `\n\n---------- Forwarded message ----------\nFrom: ${message.from_address}\nSubject: ${message.subject}\n\n${message.text_body}`,
-                    })
-                  }
-                >
-                  Forward message
-                  <ArrowUpRight size={13} />
-                </button>
+                <div className="message-response-actions">
+                  <button
+                    className="secondary-button"
+                    onClick={() => reply(true)}
+                  >
+                    <ReplyAll size={15} />
+                    Reply all
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={forwarding}
+                    onClick={() => void forward()}
+                  >
+                    {forwarding ? (
+                      <LoaderCircle size={15} className="spin" />
+                    ) : (
+                      <ArrowUpRight size={15} />
+                    )}
+                    {forwarding
+                      ? "Preparing files…"
+                      : "Forward with attachments"}
+                  </button>
+                </div>
               </div>
             </section>
           ) : (
@@ -1222,9 +1523,22 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
         <div className="toast" role="status">
           <Check size={17} />
           {notice}
+          {undo && (
+            <button
+              className="undo-button"
+              disabled={mutationBusy}
+              onClick={() => void undoMove()}
+            >
+              <Undo2 size={14} />
+              Undo
+            </button>
+          )}
           <button
             aria-label="Dismiss notification"
-            onClick={() => setNotice("")}
+            onClick={() => {
+              setNotice("");
+              setUndo(null);
+            }}
           >
             <X size={14} />
           </button>
@@ -1238,6 +1552,12 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
             aria-modal="true"
             aria-labelledby="compose-title"
             onSubmit={send}
+            onKeyDown={(event) => {
+              if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.requestSubmit();
+              }
+            }}
           >
             <div className="composer-header">
               <div>
@@ -1256,109 +1576,113 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 <X size={19} />
               </button>
             </div>
-            <div className="composer-fields">
-              <label>
-                From
-                <select
-                  aria-label="From"
-                  value={composer.fromAddress}
-                  onChange={(e) =>
-                    setComposer({ ...composer, fromAddress: e.target.value })
-                  }
-                >
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.address}>
-                      {a.display_name || a.address} · {a.address}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                To
-                <input
-                  aria-label="To"
-                  autoFocus
-                  required
-                  placeholder="name@company.com"
-                  value={composer.to}
-                  onChange={(e) =>
-                    setComposer({ ...composer, to: e.target.value })
-                  }
-                />
-                <button
-                  type="button"
-                  className="text-button"
-                  onClick={() => setCcVisible(!ccVisible)}
-                >
-                  Cc / Bcc
-                </button>
-              </label>
-              {ccVisible && (
-                <>
-                  <label>
-                    Cc
-                    <input
-                      aria-label="Cc"
-                      value={composer.cc}
-                      onChange={(e) =>
-                        setComposer({ ...composer, cc: e.target.value })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Bcc
-                    <input
-                      aria-label="Bcc"
-                      value={composer.bcc}
-                      onChange={(e) =>
-                        setComposer({ ...composer, bcc: e.target.value })
-                      }
-                    />
-                  </label>
-                </>
-              )}
-              <label>
-                Subject
-                <input
-                  aria-label="Subject"
-                  placeholder="What’s on your mind?"
-                  value={composer.subject}
-                  onChange={(e) =>
-                    setComposer({ ...composer, subject: e.target.value })
-                  }
-                />
-              </label>
-            </div>
-            <textarea
-              aria-label="Message body"
-              className="compose-body"
-              placeholder="A good conversation starts with a hello…"
-              value={composer.text}
-              onChange={(e) =>
-                setComposer({ ...composer, text: e.target.value })
-              }
-            />
-            {files.length > 0 && (
-              <div className="compose-files">
-                {files.map((f, i) => (
-                  <span key={`${f.name}-${i}`}>
-                    <Paperclip size={14} />
-                    {f.name}
-                    <small>{formatBytes(f.size)}</small>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${f.name}`}
-                      onClick={() => setFiles(files.filter((_, n) => n !== i))}
-                    >
-                      <X size={14} />
-                    </button>
-                  </span>
-                ))}
+            <fieldset className="composer-content" disabled={sending}>
+              <div className="composer-fields">
+                <label>
+                  From
+                  <select
+                    aria-label="From"
+                    value={composer.fromAddress}
+                    onChange={(e) =>
+                      setComposer({ ...composer, fromAddress: e.target.value })
+                    }
+                  >
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.address}>
+                        {a.display_name || a.address} · {a.address}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  To
+                  <input
+                    aria-label="To"
+                    autoFocus
+                    required
+                    placeholder="name@company.com"
+                    value={composer.to}
+                    onChange={(e) =>
+                      setComposer({ ...composer, to: e.target.value })
+                    }
+                  />
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setCcVisible(!ccVisible)}
+                  >
+                    Cc / Bcc
+                  </button>
+                </label>
+                {ccVisible && (
+                  <>
+                    <label>
+                      Cc
+                      <input
+                        aria-label="Cc"
+                        value={composer.cc}
+                        onChange={(e) =>
+                          setComposer({ ...composer, cc: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Bcc
+                      <input
+                        aria-label="Bcc"
+                        value={composer.bcc}
+                        onChange={(e) =>
+                          setComposer({ ...composer, bcc: e.target.value })
+                        }
+                      />
+                    </label>
+                  </>
+                )}
+                <label>
+                  Subject
+                  <input
+                    aria-label="Subject"
+                    placeholder="What’s on your mind?"
+                    value={composer.subject}
+                    onChange={(e) =>
+                      setComposer({ ...composer, subject: e.target.value })
+                    }
+                  />
+                </label>
               </div>
-            )}
-            {error && (
+              <textarea
+                aria-label="Message body"
+                className="compose-body"
+                placeholder="A good conversation starts with a hello…"
+                value={composer.text}
+                onChange={(e) =>
+                  setComposer({ ...composer, text: e.target.value })
+                }
+              />
+              {files.length > 0 && (
+                <div className="compose-files">
+                  {files.map((f, i) => (
+                    <span key={`${f.name}-${i}`}>
+                      <Paperclip size={14} />
+                      {f.name}
+                      <small>{formatBytes(f.size)}</small>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${f.name}`}
+                        onClick={() =>
+                          setFiles(files.filter((_, n) => n !== i))
+                        }
+                      >
+                        <X size={14} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </fieldset>
+            {(error || recovery.storageError) && (
               <div className="compose-error" role="alert">
-                {error}
+                {error || recovery.storageError}
               </div>
             )}
             <div className="composer-footer">
@@ -1395,20 +1719,20 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                 }}
               />
               <span className="composer-hint">
-                {demo
-                  ? "Sample mailbox only"
-                  : "Securely sent through your workspace"}
+                <span aria-live="polite">
+                  {recovery.status === "saved"
+                    ? "Draft saved on this device"
+                    : recovery.status === "saving"
+                      ? "Saving draft…"
+                      : "Ctrl / ⌘ + Enter to send"}
+                </span>
               </span>
               <button
                 type="button"
                 className="icon-button"
                 aria-label="Discard message"
                 disabled={sending}
-                onClick={() => {
-                  setComposer(null);
-                  setFiles([]);
-                  setError("");
-                }}
+                onClick={() => void discardComposer()}
               >
                 <Trash2 size={18} />
               </button>
@@ -1498,6 +1822,7 @@ export default function MailApp({ demo = false }: { demo?: boolean }) {
                   const { error } = await getSupabase().auth.signOut();
                   if (error) setError(error.message);
                   else {
+                    await recovery.clear().catch(() => {});
                     setMessages([]);
                     setAccounts([]);
                     setActive(null);

@@ -11,10 +11,13 @@ export type Message = {
   account_id?: string;
   thread_id?: string;
   reply_to?: string;
+  provider_message_id?: string;
+  trashed_at?: string | null;
   from_name: string;
   from_address: string;
   to_addresses: string[];
   cc_addresses?: string[];
+  bcc_addresses?: string[];
   subject: string;
   text_body: string;
   html_body?: string;
@@ -42,4 +45,5 @@ export type Compose = {
   text: string;
   fromAddress: string;
   thread_id?: string;
+  in_reply_to?: string;
 };
