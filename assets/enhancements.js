@@ -5,7 +5,6 @@ import { renderMailAttachments } from './mail-attachments.js';
 const qs = (s, root = document) => root.querySelector(s);
 const qsa = (s, root = document) => [...root.querySelectorAll(s)];
 const MEETING_TZ = 'Europe/Berlin';
-let deferredInstallPrompt = null;
 let lastVisibleRefresh = Date.now();
 let decorateScheduled = false;
 let standaloneRenderedFor = '';
@@ -14,13 +13,6 @@ function esc(value = '') {
   return String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[c]));
 }
 function icon(name) { return `<span class="material-symbols-rounded">${name}</span>`; }
-function fmtBytes(value) {
-  const bytes = Number(value || 0);
-  if (!bytes) return '0 B';
-  const units = ['B','KB','MB','GB'];
-  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
-  return `${(bytes / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`;
-}
 function fmtMeetingDate(value) {
   if (!value) return '';
   return new Intl.DateTimeFormat('en-GB', {
@@ -165,24 +157,6 @@ function decorateTopbar() {
   }
 
   qs('#ffMeetingBtn', topbar)?.remove();
-
-  if (deferredInstallPrompt && !qs('#ffInstallApp', topbar)) {
-    const install = document.createElement('button');
-    install.id = 'ffInstallApp';
-    install.className = 'icon-btn';
-    install.title = 'Install FrankiFlow Mail';
-    install.setAttribute('aria-label', 'Install FrankiFlow Mail');
-    install.innerHTML = icon('install_desktop');
-    install.addEventListener('click', async () => {
-      const prompt = deferredInstallPrompt;
-      if (!prompt) return;
-      prompt.prompt();
-      await prompt.userChoice;
-      deferredInstallPrompt = null;
-      install.remove();
-    });
-    topbar.appendChild(install);
-  }
 
   updateConnectionPill();
 }
@@ -644,7 +618,6 @@ function focusSearch() {
 window.addEventListener('online', updateConnectionPill);
 window.addEventListener('offline', updateConnectionPill);
 // Browser handles the install prompt natively.
-window.addEventListener('appinstalled', () => { deferredInstallPrompt = null; qs('#ffInstallApp')?.remove(); });
 
 let ffLastMailClick = { id:'', at:0 };
 document.addEventListener('click', event => {
