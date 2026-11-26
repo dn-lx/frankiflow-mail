@@ -20,7 +20,6 @@ const NAV = [
 ];
 const esc=(v='')=>String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));
 const stripHtml=(html='')=>{const d=document.createElement('div');d.innerHTML=html;return(d.textContent||d.innerText||'').trim()};
-const signaturePlainText=(html='')=>{const d=document.createElement('div');d.innerHTML=String(html).replace(/<br\s*\/?>/gi,'\n');return(d.textContent||d.innerText||'').trim()};
 const initials=(name='')=>name.split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]?.toUpperCase()).join('')||'?';
 const arr=v=>Array.isArray(v)?v:[];
 const addresses=v=>arr(v).join(', ');
@@ -33,7 +32,6 @@ const currentUser=()=>state.session?.user;
 const accountByAddress=address=>state.accounts.find(a=>a.address===address)||state.accounts.find(a=>a.is_primary)||null;
 const accountForMessage=m=>state.accounts.find(a=>a.id===m?.account_id)||accountByAddress(m?.from_address);
 const defaultFromAddress=()=>state.accounts.find(a=>a.address===state.settings?.default_sender_address)?.address||state.accounts.find(a=>a.is_primary)?.address||state.accounts[0]?.address||CONFIG.mailbox;
-const trashDaysLeft=m=>{if(!m?.trashed_at)return 10;const ms=new Date(m.trashed_at).getTime()+10*864e5-Date.now();return Math.max(0,Math.ceil(ms/864e5));};
 function updateDocumentTitle(){const n=unreadCount();document.title=n?`(${n}) FrankiFlow Mail`:'FrankiFlow Mail';}
 
 function sanitizeReaderEmailHtml(html=''){
@@ -406,7 +404,21 @@ async function saveDraft(){
   try{return await composer.savePromise;}finally{composer.savePromise=null;if(composer.pendingSave&&state.composer===composer&&!composer.sending){composer.pendingSave=false;scheduleAutosave(true);}}
 }
 async function saveDraftData(composer){if(state.composer!==composer)return;const d=composerData();if(!d)return;if(!composer.draftId&&!composerHasMeaningfulContent(d)){composer.el.querySelector('#draftStatus').textContent='Autosave on';return;}const account=accountByAddress(d.fromAddress)||await primaryAccount();const row={account_id:account.id,thread_id:d.thread_id,direction:'draft',folder:'drafts',from_address:d.fromAddress,to_addresses:splitAddr(d.to),cc_addresses:splitAddr(d.cc),bcc_addresses:splitAddr(d.bcc),subject:d.subject||'',text_body:d.text||'',html_body:d.html||'',preview:(d.text||'').replace(/\s+/g,' ').slice(0,180),is_read:true,updated_at:new Date().toISOString()};let result;if(composer.draftId)result=await supabase.from('frankiflow_mail_messages').update(row).eq('id',composer.draftId);else result=await supabase.from('frankiflow_mail_messages').insert(row).select('id').single();if(result.error)return composer?.el.querySelector('#draftStatus')&&(composer.el.querySelector('#draftStatus').textContent='Save failed');if(result.data?.id)composer.draftId=result.data.id;if(composer)composer.el.querySelector('#draftStatus').textContent='Saved';}
-async function filePayload(){const out=[];for(const f of state.composer?.files||[]){const bytes=new Uint8Array(await f.arrayBuffer());let binary='';const chunkSize=0x8000;for(let i=0;i<bytes.length;i+=chunkSize)binary+=String.fromCharCode(...bytes.subarray(i,i+chunkSize));const content=btoa(binary);out.push({filename:f.name,content,contentType:f.type||undefined});}return out;}
+async function filePayload(){
+  const out=[];
+  for(const f of state.composer?.files||[]){
+    const bytes=new Uint8Array(await f.arrayBuffer());
+    let binary='';
+    const chunkSize=0x8000;
+    for(let i=0;i<bytes.length;i+=chunkSize){
+      const chunk=bytes.subarray(i,i+chunkSize);
+      binary+=String.fromCharCode(...chunk);
+    }
+    const content=btoa(binary);
+    out.push({filename:f.name,content,contentType:f.type||undefined});
+  }
+  return out;
+}
 async function sendComposer(scheduledAt=null){
   const composer=state.composer;if(!composer||composer.sending)return;
   const d=composerData();if(!d?.to.trim())return toast('Add at least one recipient','warning');
@@ -500,7 +512,29 @@ function openFilterManager(){
   const content=`<div class="filter-list">${filters.map(f=>`<div class="template-item filter-row"><div class="main"><strong>${esc(f.name)}</strong><small>${esc(filterSummary(f))}</small></div><span class="status-pill ${f.active===false?'off':''}">${f.active===false?'Paused':'Active'}</span><button class="icon-btn" data-filter-toggle="${f.id}" title="${f.active===false?'Enable':'Pause'}">${icon(f.active===false?'play_arrow':'pause')}</button><button class="icon-btn" data-filter-delete="${f.id}">${icon('delete')}</button></div>`).join('')||'<p class="muted">No filters yet. Build rules using sender, recipient, subject, body, attachments and receiving account.</p>'}</div><div class="filter-builder"><div class="field"><label>Filter name</label><input id="filterName" placeholder="Invoices from suppliers"></div><div class="filter-subhead">Match incoming mail when…</div><div class="settings-grid two"><div class="field"><label>From contains</label><input id="filterFrom" placeholder="billing@ or @supplier.com"></div><div class="field"><label>To contains</label><input id="filterTo" placeholder="accounts@client.com"></div><div class="field"><label>Subject contains</label><input id="filterSubject" placeholder="invoice"></div><div class="field"><label>Body contains</label><input id="filterBody" placeholder="payment due"></div><div class="field"><label>Received at</label><select id="filterAccount">${accountOptions}</select></div><div class="field"><label>Attachments</label><select id="filterAttachment"><option value="">Any</option><option value="yes">Has attachment</option><option value="no">No attachment</option></select></div></div><div class="filter-subhead">Then…</div><div class="settings-grid two"><div class="field"><label>Apply label</label><select id="filterLabel">${labelOptions}</select></div><div class="field"><label>Move message</label><select id="filterFolder"><option value="">Leave in Inbox</option><option value="archive">Archive</option><option value="spam">Spam</option><option value="trash">Trash</option></select></div></div><div class="filter-actions-grid"><label><input id="filterRead" type="checkbox"> Mark as read</label><label><input id="filterStar" type="checkbox"> Star</label><label><input id="filterImportant" type="checkbox"> High priority</label><label><input id="filterPin" type="checkbox"> Pin</label><label><input id="filterStop" type="checkbox"> Stop processing more filters</label></div></div>`;
   openModal('Mail filters',content,async modal=>{const name=modal.querySelector('#filterName').value.trim();if(!name)return toast('Add a filter name','warning');const conditions={from_contains:modal.querySelector('#filterFrom').value.trim(),to_contains:modal.querySelector('#filterTo').value.trim(),subject_contains:modal.querySelector('#filterSubject').value.trim(),body_contains:modal.querySelector('#filterBody').value.trim(),account_address:modal.querySelector('#filterAccount').value||'',has_attachment:modal.querySelector('#filterAttachment').value||''};if(!Object.values(conditions).some(Boolean))return toast('Add at least one matching condition','warning');const actions={};const labelId=modal.querySelector('#filterLabel').value,folder=modal.querySelector('#filterFolder').value;if(labelId)actions.label_id=labelId;if(folder)actions.folder=folder;if(modal.querySelector('#filterRead').checked)actions.is_read=true;if(modal.querySelector('#filterStar').checked)actions.is_starred=true;if(modal.querySelector('#filterImportant').checked)actions.priority='high';if(modal.querySelector('#filterPin').checked)actions.is_pinned=true;if(modal.querySelector('#filterStop').checked)actions.stop_processing=true;if(!Object.keys(actions).length)return toast('Choose at least one action','warning');const {error}=await supabase.from('frankiflow_mail_filters').insert({name,conditions,actions,created_by:currentUser().id,active:true});if(error)return toast(error.message,'error');modal.closest('.modal-backdrop').remove();await loadAll();toast('Filter created','filter_alt');},modal=>{modal.querySelectorAll('[data-filter-delete]').forEach(b=>b.onclick=async()=>{const {error}=await supabase.from('frankiflow_mail_filters').delete().eq('id',b.dataset.filterDelete);if(error)return toast(error.message,'error');b.closest('.filter-row')?.remove();state.filters=state.filters.filter(f=>f.id!==b.dataset.filterDelete);});modal.querySelectorAll('[data-filter-toggle]').forEach(b=>b.onclick=async()=>{const f=state.filters.find(x=>x.id===b.dataset.filterToggle);if(!f)return;const active=f.active===false;const {error}=await supabase.from('frankiflow_mail_filters').update({active,updated_at:new Date().toISOString()}).eq('id',f.id);if(error)return toast(error.message,'error');modal.closest('.modal-backdrop').remove();await loadAll();openFilterManager();});});
 }
-function filterSummary(f){const c=f.conditions||{},a=f.actions||{},parts=[];if(c.from_contains)parts.push(`from “${c.from_contains}”`);if(c.to_contains)parts.push(`to “${c.to_contains}”`);if(c.subject_contains)parts.push(`subject “${c.subject_contains}”`);if(c.body_contains)parts.push(`body “${c.body_contains}”`);if(c.account_address)parts.push(`received at ${c.account_address}`);if(c.has_attachment==='yes')parts.push('has attachment');if(c.has_attachment==='no')parts.push('no attachment');const actions=[];if(a.label_id)actions.push(`label ${state.labels.find(l=>l.id===a.label_id)?.name||'selected'}`);if(a.folder)actions.push(`move to ${a.folder}`);if(a.is_read)actions.push('mark read');if(a.is_starred)actions.push('star');if(a.priority==='high')actions.push('high priority');if(a.is_pinned)actions.push('pin');return`${parts.join(' · ')||'Any inbound mail'} → ${actions.join(', ')||'No action'}`;}
+function filterSummary(f){
+  const c=f.conditions||{},a=f.actions||{},parts=[];
+  if(c.from_contains)parts.push(`from “${c.from_contains}”`);
+  if(c.to_contains)parts.push(`to “${c.to_contains}”`);
+  if(c.subject_contains)parts.push(`subject “${c.subject_contains}”`);
+  if(c.body_contains)parts.push(`body “${c.body_contains}”`);
+  if(c.account_address)parts.push(`received at ${c.account_address}`);
+  if(c.has_attachment==='yes')parts.push('has attachment');
+  if(c.has_attachment==='no')parts.push('no attachment');
+  const actions=[];
+  if(a.label_id){
+    const labelName=state.labels.find(l=>l.id===a.label_id)?.name||'selected';
+    actions.push(`label ${labelName}`);
+  }
+  if(a.folder)actions.push(`move to ${a.folder}`);
+  if(a.is_read)actions.push('mark read');
+  if(a.is_starred)actions.push('star');
+  if(a.priority==='high')actions.push('high priority');
+  if(a.is_pinned)actions.push('pin');
+  const conditionText=parts.join(' · ')||'Any inbound mail';
+  const actionText=actions.join(', ')||'No action';
+  return`${conditionText} → ${actionText}`;
+}
 async function applyFilters(){
   if(!state.filters?.length)return;for(const m of state.messages.filter(x=>x.direction==='inbound'&&x.folder==='inbox')){for(const f of state.filters.filter(x=>x.active!==false)){const c=f.conditions||{},account=accountForMessage(m)?.address||arr(m.to_addresses)[0]||'',body=String(m.text_body||stripHtml(m.html_body)||'').toLowerCase();if(c.from_contains&&!String(m.from_address||'').toLowerCase().includes(String(c.from_contains).toLowerCase()))continue;if(c.to_contains&&![...arr(m.to_addresses),...arr(m.cc_addresses)].join(' ').toLowerCase().includes(String(c.to_contains).toLowerCase()))continue;if(c.subject_contains&&!String(m.subject||'').toLowerCase().includes(String(c.subject_contains).toLowerCase()))continue;if(c.body_contains&&!body.includes(String(c.body_contains).toLowerCase()))continue;if(c.account_address&&String(account).toLowerCase()!==String(c.account_address).toLowerCase())continue;if(c.has_attachment==='yes'&&!m.has_attachments)continue;if(c.has_attachment==='no'&&m.has_attachments)continue;const a=f.actions||{},patch={};for(const key of ['folder','is_read','is_starred','priority','is_pinned'])if(a[key]!==undefined)patch[key]=a[key];if(a.folder==='trash')patch.trashed_at=new Date().toISOString();if(Object.keys(patch).length){await supabase.from('frankiflow_mail_messages').update({...patch,updated_at:new Date().toISOString()}).eq('id',m.id);Object.assign(m,patch);}if(a.label_id){await supabase.from('frankiflow_mail_message_labels').upsert({message_id:m.id,label_id:a.label_id},{onConflict:'message_id,label_id'});if(!state.messageLabels.some(x=>x.message_id===m.id&&x.label_id===a.label_id))state.messageLabels.push({message_id:m.id,label_id:a.label_id});}if(a.stop_processing)break;}}
 }
