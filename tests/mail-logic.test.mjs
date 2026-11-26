@@ -218,12 +218,13 @@ test('thread: ascending by creation, without drafts, falling back to the message
       msg('late', { thread_id: 't', created_at: '2026-03-03T00:00:00Z' }),
       msg('draft', { thread_id: 't', folder: 'drafts', direction: 'draft', created_at: '2026-03-04T00:00:00Z' }),
       msg('early', { thread_id: 't', created_at: '2026-03-01T00:00:00Z' }),
+      msg('unrelated', { thread_id: 'other', created_at: '2026-03-02T00:00:00Z' }),
     ],
   });
   const { threadFor } = load({ state });
   assert.deepEqual(ids(threadFor(state.messages[0])), ['early', 'late']);
   assert.deepEqual(ids(threadFor(msg('x'))), ['x']);
-  assert.deepEqual(ids(threadFor(state.messages[1]).slice(0, 2)), ['early', 'late']);
+  assert.deepEqual(ids(threadFor(state.messages[1])), ['early', 'late']);
 });
 
 test('reply: prefers reply_to and returns only that address for a plain reply', () => {
@@ -281,8 +282,11 @@ test('filter summary: lists conditions and actions in fixed order', () => {
 });
 
 test('file payload: base64-encodes binary files in chunks and falls back to no content type', async () => {
+  // Larger than two 32768-byte chunks; each chunk (including the 5-byte tail) differs from the others.
   const big = new Uint8Array(0x8000 * 2 + 5);
-  for (let i = 0; i < big.length; i++) big[i] = (i * 7) & 0xff;
+  for (let i = 0; i < big.length; i++) big[i] = (i * 7 + Math.floor(i / 0x8000) * 13) % 256;
+  assert.notDeepEqual(Array.from(big.subarray(0, 5)), Array.from(big.subarray(0x8000 * 2)));
+  assert.notDeepEqual(Array.from(big.subarray(0, 5)), Array.from(big.subarray(0x8000, 0x8000 + 5)));
   const small = new Uint8Array([0, 255, 128, 10, 13]);
   const file = (name, type, bytes) => ({ name, type, arrayBuffer: async () => bytes.buffer.slice(0) });
   const state = makeState({ composer: { files: [file('big.bin', 'application/octet-stream', big), file('raw', '', small)] } });
