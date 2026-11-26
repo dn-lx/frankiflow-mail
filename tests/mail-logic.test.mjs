@@ -56,7 +56,8 @@ function load({ state = makeState(), mailbox = 'mail@frankiflow.de', mobile = fa
 }
 
 const plain = value => JSON.parse(JSON.stringify(value));
-const ids = list => list.map(m => m.id);
+// Array.from (called from the test realm) copies the sandbox array into a test-realm array.
+const ids = list => Array.from(list, m => m.id);
 
 const msg = (id, extra = {}) => ({
   id, folder: 'inbox', direction: 'inbound', is_read: true, is_starred: false, is_pinned: false,
