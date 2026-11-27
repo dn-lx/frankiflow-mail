@@ -77,6 +77,20 @@ registerStrings({
     de: '{count} Unterhaltung(en) werden dauerhaft gelöscht. Das kann nicht rückgängig gemacht werden.',
     en: '{count} conversation(s) will be deleted permanently. This cannot be undone.',
   },
+  'list.emptySpam': { de: 'Spam leeren', en: 'Empty spam' },
+  'list.emptyTrash': { de: 'Papierkorb leeren', en: 'Empty trash' },
+  'list.emptySpamTitle': { de: 'Spam jetzt leeren?', en: 'Empty spam now?' },
+  'list.emptySpamText': {
+    de: 'Alle Nachrichten im Spam-Ordner werden dauerhaft gelöscht. Das kann nicht rückgängig gemacht werden.',
+    en: 'All messages in Spam will be deleted permanently. This cannot be undone.',
+  },
+  'list.emptyTrashTitle': { de: 'Papierkorb jetzt leeren?', en: 'Empty trash now?' },
+  'list.emptyTrashText': {
+    de: 'Alle Nachrichten im Papierkorb werden dauerhaft gelöscht. Das kann nicht rückgängig gemacht werden.',
+    en: 'All messages in Trash will be deleted permanently. This cannot be undone.',
+  },
+  'list.done.emptiedSpam': { de: 'Spam-Ordner geleert', en: 'Spam emptied' },
+  'list.done.emptiedTrash': { de: 'Papierkorb geleert', en: 'Trash emptied' },
 
   // Empty states
   'list.empty.inbox.title': { de: 'Alles erledigt', en: 'All caught up' },

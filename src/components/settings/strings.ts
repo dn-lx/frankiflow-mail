@@ -152,8 +152,8 @@ export const SETTINGS_STRINGS = {
     en: 'Remote images in emails',
   },
   'settings.reading.remoteImagesAsk': {
-    de: 'Vor dem Laden fragen (schützt vor Tracking-Pixeln)',
-    en: 'Ask before loading (protects against tracking pixels)',
+    de: 'Vor dem Laden fragen',
+    en: 'Ask before loading',
   },
   'settings.reading.remoteImagesAlways': {
     de: 'Immer automatisch laden',
@@ -352,6 +352,14 @@ export const SETTINGS_STRINGS = {
   'settings.account.roleLabel': {
     de: 'Rolle',
     en: 'Role',
+  },
+  'settings.account.roleAdmin': {
+    de: 'Administrator',
+    en: 'Administrator',
+  },
+  'settings.account.roleMember': {
+    de: 'Mitglied',
+    en: 'Member',
   },
   'settings.account.demoUsersLink': {
     de: 'Demo-Testbenutzer verwalten',

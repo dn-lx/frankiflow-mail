@@ -11,6 +11,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  DemoBadge,
   Dialog,
   EmptyState,
   Select,
@@ -278,7 +279,7 @@ export function DemoAdminView() {
           <div className={styles.titleBlock}>
             <div className={styles.titleLine}>
               <h1 className={styles.title}>{t('demoAdmin.title')}</h1>
-              <Badge tone="accent">{t('demo.badge')}</Badge>
+              <DemoBadge />
             </div>
             <p className={styles.subtitle}>{t('demoAdmin.subtitle')}</p>
             {session && (
@@ -326,7 +327,7 @@ export function DemoAdminView() {
                       <div className={styles.userMeta}>
                         <div className={styles.userNameRow}>
                           <span className={styles.userName}>{u.name}</span>
-                          <Badge tone={u.role === 'admin' ? 'accent' : 'neutral'}>
+                          <Badge tone="neutral" className={styles.rolePill}>
                             {t(u.role === 'admin' ? 'demoAdmin.roleAdmin' : 'demoAdmin.roleMember')}
                           </Badge>
                           {isCurrent && (
@@ -336,9 +337,9 @@ export function DemoAdminView() {
                         <span className={styles.userEmail}>{u.email}</span>
                         <div className={styles.mailboxBadges}>
                           {u.mailboxAddresses.map((addr) => (
-                            <Badge key={addr} tone="neutral">
+                            <span key={addr} className={styles.mailboxAddr}>
                               {addr}
-                            </Badge>
+                            </span>
                           ))}
                         </div>
                       </div>
@@ -467,7 +468,7 @@ export function DemoAdminView() {
               </h2>
               <p className={styles.resetDesc}>{t('demoAdmin.resetDesc')}</p>
             </div>
-            <Button variant="danger" onClick={() => setResetOpen(true)}>
+            <Button variant="danger" className={styles.dangerBtn} onClick={() => setResetOpen(true)}>
               {t('demoAdmin.resetButton')}
             </Button>
           </div>
@@ -544,7 +545,7 @@ export function DemoAdminView() {
             <Button variant="secondary" onClick={() => setResetOpen(false)} disabled={resetting}>
               {t('common.cancel')}
             </Button>
-            <Button variant="danger" loading={resetting} onClick={() => void handleResetDemo()}>
+            <Button variant="danger" className={styles.dangerBtn} loading={resetting} onClick={() => void handleResetDemo()}>
               {t('demoAdmin.resetButton')}
             </Button>
           </>

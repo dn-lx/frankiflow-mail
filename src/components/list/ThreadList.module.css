@@ -44,6 +44,26 @@
   min-height: 36px;
 }
 
+.headerCheck input[type="checkbox"] {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+}
+
+.headerCheck input[type="checkbox"]:indeterminate {
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 3px;
+  border: 1px solid var(--color-accent-solid);
+  background: var(--color-accent-solid);
+  background-image: linear-gradient(var(--color-on-accent), var(--color-on-accent));
+  background-size: 10px 2px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
 .selectMenu > button {
   width: 22px;
   min-width: 22px;
@@ -131,6 +151,15 @@
   .bulkActions {
     gap: 0;
   }
+
+  .header:not(.bulk) {
+    flex-wrap: wrap;
+  }
+
+  .emptyFolderBtn {
+    order: 10;
+    margin-left: auto;
+  }
 }
 
 .scroller {
@@ -157,7 +186,7 @@
 .row {
   position: relative;
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-columns: var(--list-avatar-size, 40px) minmax(0, 1fr) auto;
   column-gap: var(--space-3);
   align-items: start;
   min-height: var(--row-height);
@@ -193,8 +222,8 @@
   z-index: 1;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: var(--list-avatar-size, 40px);
+  height: var(--list-avatar-size, 40px);
 }
 
 .avatar {
@@ -322,7 +351,8 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--color-danger-subtle);
+  border: 1.5px solid currentColor;
+  background: transparent;
   color: var(--color-danger);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-bold);
@@ -435,12 +465,20 @@
     display: flex;
   }
 
-  /* Reserve the bar's width so the sender ends with an ellipsis before it (and the time stays visible). */
-  .row.hover3:not(.selectionMode):hover .line1 {
+  /* Hide the timestamp while quick actions are visible (Gmail style) so the sender keeps its width. */
+  .row:not(.selectionMode):hover .time,
+  .row:not(.selectionMode):has(.hoverActions [aria-expanded="true"], .hoverActions dialog[open], .hoverActions :focus-visible) .time {
+    display: none;
+  }
+
+  /* Reserve the bar's width so the sender ends with an ellipsis only if it still does not fit. */
+  .row.hover3:not(.selectionMode):hover .line1,
+  .row.hover3:not(.selectionMode):has(.hoverActions [aria-expanded="true"], .hoverActions dialog[open], .hoverActions :focus-visible) .line1 {
     padding-right: calc(3 * var(--control-height-sm) + 4 * 2px + 8px);
   }
 
-  .row.hover4:not(.selectionMode):hover .line1 {
+  .row.hover4:not(.selectionMode):hover .line1,
+  .row.hover4:not(.selectionMode):has(.hoverActions [aria-expanded="true"], .hoverActions dialog[open], .hoverActions :focus-visible) .line1 {
     padding-right: calc(4 * var(--control-height-sm) + 5 * 2px + 8px);
   }
 }
@@ -454,17 +492,47 @@
     display: block;
   }
 
-  /* Star above "⋮", each a full 44px target, no overlap; slightly pulled out so the row stays compact. */
+  /* Star and "⋮" side by side in the top-right area, each a full 44x44 target, no overlap. */
   .side {
+    flex-direction: row;
+    align-items: center;
     gap: 0;
     padding-top: 0;
-    margin: -6px -8px -6px 0;
+    margin: -6px -4px 0 0;
   }
 
   .side > button,
   .touchMenu > div > button {
     width: 44px;
     height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Compact density: 28px avatar, tighter padding, single-gap 2-line rows. */
+:global([data-density="compact"]) .row {
+  min-height: 0;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+:global([data-density="compact"]) .link {
+  gap: 0;
+  line-height: var(--list-line-height);
+}
+
+:global([data-density="compact"]) .preview {
+  display: none;
+}
+
+:global([data-density="compact"]) .side {
+  padding-top: 12px;
+}
+
+@media (hover: none), (pointer: coarse) {
+  :global([data-density="compact"]) .side {
+    padding-top: 0;
   }
 }
 

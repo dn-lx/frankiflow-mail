@@ -13,6 +13,7 @@ import styles from './MessageView.module.css';
 export interface MessageViewProps {
   message: Message;
   defaultExpanded: boolean;
+  isLatest: boolean;
   canCollapse: boolean;
   userAddresses: string[];
   onReply: (message: Message) => void;
@@ -237,6 +238,7 @@ function AttachmentItem({ attachment }: { attachment: AttachmentMeta }) {
 export function MessageView({
   message,
   defaultExpanded,
+  isLatest,
   canCollapse,
   userAddresses,
   onReply,
@@ -513,7 +515,7 @@ export function MessageView({
         </section>
       )}
 
-      {canCollapse && !defaultExpanded && (
+      {canCollapse && !isLatest && (
         <div className={styles.phoneMessageFooterActions}>
           <button
             type="button"

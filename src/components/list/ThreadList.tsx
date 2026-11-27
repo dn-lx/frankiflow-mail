@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { useApp } from '@/components/providers/AppProvider';
 import { Button, Checkbox, Dialog, EmptyState, IconButton, Menu, Skeleton, useToast, type IconName, type MenuItem } from '@/components/ui';
 import type { Folder, Label, ThreadSummary } from '@/lib/backend/types';
+import { describeError } from '@/lib/i18n';
 import {
   SELECT_FILTERS,
   neighbourId,
@@ -77,13 +78,16 @@ export function ThreadList({
   hrefFor,
   onClearSearch,
 }: ThreadListProps) {
-  const { t, lang, online } = useApp();
+  const { backend, settings, t, lang, online } = useApp();
+  const compact = settings.density === 'compact';
   const toast = useToast();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLLIElement>(null);
   const anchorRef = useRef<string | null>(null);
   const focusInside = useRef(false);
   const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null);
+  const [confirmEmpty, setConfirmEmpty] = useState(false);
+  const [emptying, setEmptying] = useState(false);
 
   const threads = data.threads;
   const order = useMemo(() => threads.map((th) => th.id), [threads]);
@@ -258,16 +262,47 @@ export function ThreadList({
     { id: 'clear', icon: 'x', label: t('list.clearSelection'), onSelect: clear },
   ];
 
-  /** "To" line for Sent / Drafts / Scheduled (see ThreadRow `recipients`). */
+  /** "To" line for Sent / Drafts / Scheduled, or outbound-only threads in any view. */
   const toMode = showsRecipients(folder);
   const recipientsFor = (th: ThreadSummary): string | null | undefined => {
-    if (!toMode) return undefined;
+    const hasExtras = Object.prototype.hasOwnProperty.call(data.extras, th.id);
     const fetched = data.extras[th.id]?.recipients;
-    if (fetched && fetched.length) return fetched.join(', ');
-    const others = otherParticipants(th.participants, ownMailboxes ?? []);
-    if (others.length && ownMailboxes) return others.join(', ');
-    if (fetched) return '';
-    return null;
+    if (fetched !== undefined) return fetched.length ? fetched.join(', ') : '';
+    if (hasExtras && !toMode) return undefined;
+    const ownOnly = !!ownMailboxes && otherParticipants(th.participants, ownMailboxes).length === 0;
+    if (toMode || ownOnly) {
+      const others = otherParticipants(th.participants, ownMailboxes ?? []);
+      if (others.length && ownMailboxes) return others.join(', ');
+      return null;
+    }
+    return undefined;
+  };
+
+  const canEmptyFolder = (folder === 'spam' || folder === 'trash') && !labelId && !search && threads.length > 0;
+  const emptyCurrentFolder = async () => {
+    if (folder !== 'spam' && folder !== 'trash') return;
+    setEmptying(true);
+    try {
+      const allThreads: ThreadSummary[] = [];
+      let before: string | undefined;
+      for (;;) {
+        const res = await backend.listThreads({ mailboxId: data.query.mailboxId, folder, limit: 200, before });
+        allThreads.push(...res.threads);
+        if (!res.nextBefore || res.threads.length === 0) break;
+        before = res.nextBefore;
+      }
+      const msgs = (await Promise.all(allThreads.map((th) => backend.getThread(th.id)))).flat();
+      const targetIds = msgs.filter((m) => m.folder === folder).map((m) => m.id);
+      if (targetIds.length > 0) await backend.deleteForever(targetIds);
+      setConfirmEmpty(false);
+      onSelectionChange(new Set());
+      toast({ tone: 'success', message: t(folder === 'spam' ? 'list.done.emptiedSpam' : 'list.done.emptiedTrash') });
+      await data.refresh().catch(() => undefined);
+    } catch (err) {
+      toast({ tone: 'error', message: t('list.actionFailed', { error: describeError(lang, err) }) });
+    } finally {
+      setEmptying(false);
+    }
   };
 
   const onListKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -328,6 +363,11 @@ export function ThreadList({
           {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
         </div>
         <span className={styles.spacer} />
+        {canEmptyFolder && (
+          <Button size="sm" variant="ghost" className={styles.emptyFolderBtn} onClick={() => setConfirmEmpty(true)}>
+            {t(folder === 'spam' ? 'list.emptySpam' : 'list.emptyTrash')}
+          </Button>
+        )}
         <IconButton
           icon="refresh"
           label={t('list.refresh')}
@@ -350,7 +390,7 @@ export function ThreadList({
         </span>
         {Array.from({ length: SKELETON_ROWS }, (_, i) => (
           <div key={i} className={styles.skeletonRow} aria-hidden="true">
-            <Skeleton circle width={36} />
+            <Skeleton circle width={compact ? 28 : 36} />
             <div className={styles.skeletonText}>
               <Skeleton width={`${50 + ((i * 17) % 35)}%`} height={14} />
               <Skeleton width={`${70 + ((i * 11) % 25)}%`} height={14} />
@@ -411,6 +451,7 @@ export function ThreadList({
             open={th.id === openId}
             selected={selection.has(th.id)}
             selectionMode={selection.size > 0}
+            compact={compact}
             labels={labelMap}
             extras={data.extras[th.id]}
             recipients={recipientsFor(th)}
@@ -481,6 +522,28 @@ export function ThreadList({
                 }}
               >
                 {t('list.deleteForever')}
+              </Button>
+            </>
+          }
+        />
+      )}
+      {confirmEmpty && (folder === 'spam' || folder === 'trash') && (
+        <Dialog
+          open
+          onClose={() => {
+            if (!emptying) setConfirmEmpty(false);
+          }}
+          title={t(folder === 'spam' ? 'list.emptySpamTitle' : 'list.emptyTrashTitle')}
+          description={t(folder === 'spam' ? 'list.emptySpamText' : 'list.emptyTrashText')}
+          size="sm"
+          closeLabel={t('common.close')}
+          footer={
+            <>
+              <Button variant="ghost" disabled={emptying} onClick={() => setConfirmEmpty(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button variant="danger" icon="trash" loading={emptying} autoFocus onClick={() => void emptyCurrentFolder()}>
+                {t(folder === 'spam' ? 'list.emptySpam' : 'list.emptyTrash')}
               </Button>
             </>
           }

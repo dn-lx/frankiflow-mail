@@ -29,6 +29,7 @@ export interface ThreadRowProps {
   open: boolean;
   selected: boolean;
   selectionMode: boolean;
+  compact?: boolean;
   labels: ReadonlyMap<string, Label>;
   extras?: ThreadExtras;
   /**
@@ -69,6 +70,7 @@ function ThreadRowImpl({
   open,
   selected,
   selectionMode,
+  compact = false,
   labels,
   extras,
   recipients,
@@ -166,6 +168,8 @@ function ThreadRowImpl({
 
   const timeIso = folder === 'scheduled' && extras?.scheduledAt ? extras.scheduledAt : thread.lastMessageAt;
   const shownLabels = thread.labelIds.map((id) => labels.get(id)).filter((l): l is Label => !!l);
+  const hideStar = folder === 'spam' || folder === 'trash';
+  const showWhen = (folder === 'snoozed' && !!extras?.snoozedUntil) || (folder === 'scheduled' && !!extras?.scheduledAt);
 
   return (
     <li
@@ -234,10 +238,17 @@ function ThreadRowImpl({
           )}
           {thread.isPinned && <Icon name="pin" size={14} className={styles.pin} label={t('list.pinned')} />}
           <span className={styles.subject}>{subject}</span>
+          {compact &&
+            shownLabels.slice(0, 2).map((l) => (
+              <Badge key={l.id} color={l.color} className={styles.chip}>
+                {l.name}
+              </Badge>
+            ))}
+          {compact && shownLabels.length > 2 && <Badge className={styles.chip}>+{shownLabels.length - 2}</Badge>}
           {thread.hasAttachments && <Icon name="paperclip" size={14} className={styles.clip} label={t('list.hasAttachments')} />}
         </span>
-        {thread.preview && <span className={styles.preview}>{thread.preview}</span>}
-        {(shownLabels.length > 0 || extras?.snoozedUntil || (folder === 'scheduled' && extras?.scheduledAt)) && (
+        {!compact && thread.preview && <span className={styles.preview}>{thread.preview}</span>}
+        {(showWhen || (!compact && shownLabels.length > 0)) && (
           <span className={styles.meta}>
             {folder === 'snoozed' && extras?.snoozedUntil && (
               <span className={styles.when}>
@@ -251,26 +262,29 @@ function ThreadRowImpl({
                 {t('list.scheduledFor', { time: shortDateTime(extras.scheduledAt, lang) })}
               </span>
             )}
-            {shownLabels.slice(0, 3).map((l) => (
-              <Badge key={l.id} color={l.color} className={styles.chip}>
-                {l.name}
-              </Badge>
-            ))}
-            {shownLabels.length > 3 && <Badge className={styles.chip}>+{shownLabels.length - 3}</Badge>}
+            {!compact &&
+              shownLabels.slice(0, 3).map((l) => (
+                <Badge key={l.id} color={l.color} className={styles.chip}>
+                  {l.name}
+                </Badge>
+              ))}
+            {!compact && shownLabels.length > 3 && <Badge className={styles.chip}>+{shownLabels.length - 3}</Badge>}
           </span>
         )}
       </a>
 
       <div className={styles.side}>
-        <IconButton
-          icon={thread.isStarred ? 'star-filled' : 'star'}
-          label={thread.isStarred ? t('list.unstar') : t('list.star')}
-          pressed={thread.isStarred}
-          size="sm"
-          className={[styles.star, thread.isStarred && styles.starOn].filter(Boolean).join(' ')}
-          onClick={() => cb.setStarred(thread.id, !thread.isStarred)}
-          onFocus={() => cb.focusRow(thread.id)}
-        />
+        {!hideStar && (
+          <IconButton
+            icon={thread.isStarred ? 'star-filled' : 'star'}
+            label={thread.isStarred ? t('list.unstar') : t('list.star')}
+            pressed={thread.isStarred}
+            size="sm"
+            className={[styles.star, thread.isStarred && styles.starOn].filter(Boolean).join(' ')}
+            onClick={() => cb.setStarred(thread.id, !thread.isStarred)}
+            onFocus={() => cb.focusRow(thread.id)}
+          />
+        )}
         <div className={styles.touchMenu}>
           <Menu label={t('list.rowActions')} items={touchItems} size="sm" />
         </div>

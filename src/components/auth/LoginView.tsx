@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { setMode } from '@/lib/backend';
 import { useApp } from '@/components/providers/AppProvider';
-import { Badge, Button, TextField } from '@/components/ui';
+import { Button, DemoBadge, TextField } from '@/components/ui';
 import { mapAuthError } from './helpers';
 import { PasswordField } from './PasswordField';
 import './strings';
@@ -101,7 +101,7 @@ export function LoginView() {
             <h1 id="login-heading" className={styles.title}>
               {t('auth.login.title')}
             </h1>
-            {mode === 'demo' && <Badge tone="accent">{t('demo.badge')}</Badge>}
+            {mode === 'demo' && <DemoBadge />}
           </div>
           <p className={styles.subtitle}>
             {t(mode === 'demo' ? 'auth.login.subtitleDemo' : 'auth.login.subtitle')}

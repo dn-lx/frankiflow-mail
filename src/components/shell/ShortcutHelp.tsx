@@ -98,7 +98,11 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
             {OPERATORS.map((op) => (
               <div key={op.labelKey} className={styles.helpRow}>
                 <dt className={styles.helpKeys}>
-                  <code className={styles.helpCode}>{op.example}</code>
+                  {op.example.split(' · ').map((token) => (
+                    <code key={token} className={styles.helpCode}>
+                      {token}
+                    </code>
+                  ))}
                 </dt>
                 <dd className={styles.helpLabel}>{t(op.labelKey)}</dd>
               </div>

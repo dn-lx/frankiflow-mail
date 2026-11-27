@@ -52,13 +52,18 @@
   bottom: 0;
   left: 0;
   width: min(300px, 86vw);
-  padding-bottom: env(safe-area-inset-bottom);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   box-shadow: var(--shadow-lg);
   transform: translateX(-100%);
   visibility: hidden;
   transition:
     transform var(--duration-base) var(--ease),
     visibility 0s linear var(--duration-base);
+}
+
+.drawer .sidebar {
+  padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
 }
 
 .drawerOpen {
@@ -96,20 +101,13 @@
   border-radius: var(--radius);
 }
 
-.demoBadge {
-  flex: none;
-  border: 1px solid currentColor;
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.08em;
-  user-select: none;
-}
-
 .topBarDemo {
   display: none;
   align-self: center;
 }
 
-.shell[data-layout="phone"] .topBarDemo {
+.shell[data-layout="phone"] .topBarDemo,
+.shell[data-layout="tablet"] .topBarDemo {
   display: inline-flex;
 }
 
@@ -406,31 +404,24 @@
   margin-right: var(--space-1);
 }
 
-/* Filter chips: their own row below the search field (the bar's first row keeps its height). */
+/* Filter chips: single horizontally scrollable row aligned with list padding. */
 .chips {
   list-style: none;
   order: 10;
   flex: 1 0 100%;
   min-width: 0;
-  margin: 0;
-  padding: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-2);
-}
-
-/* Phones: one horizontally scrollable row. */
-.shell[data-layout="phone"] .chips {
   flex-wrap: nowrap;
+  gap: var(--space-2);
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
   /* Room for focus rings inside the scroller. */
-  padding: 2px;
-  margin: -2px;
+  padding: 2px 0;
+  margin: -2px 0;
 }
 
-.shell[data-layout="phone"] .chips::-webkit-scrollbar {
+.chips::-webkit-scrollbar {
   display: none;
 }
 
@@ -686,12 +677,16 @@
 .bottomIcon {
   position: relative;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
 }
 
 .bottomBadge {
   position: absolute;
-  top: -6px;
-  left: 14px;
+  top: -4px;
+  left: 25px;
   min-width: 18px;
   padding: 0 4px;
   border-radius: var(--radius-pill);
@@ -786,6 +781,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--space-5) var(--space-6);
+  padding-bottom: var(--space-4);
 }
 
 .helpSection {
@@ -832,7 +828,12 @@
 }
 
 .helpCode {
-  font-size: var(--font-size-sm);
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
   overflow-wrap: anywhere;
 }
 

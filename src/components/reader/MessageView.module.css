@@ -126,12 +126,19 @@
 .senderName {
   font-weight: var(--font-weight-bold);
   color: var(--color-text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .senderAddress {
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .headerRight {
