@@ -147,8 +147,8 @@ export const AUTH_STRINGS = {
     en: 'Reset demo data or create a new test user below.',
   },
   'demoAdmin.roleAdmin': {
-    de: 'Admin',
-    en: 'Admin',
+    de: 'Administrator',
+    en: 'Administrator',
   },
   'demoAdmin.roleMember': {
     de: 'Mitglied',

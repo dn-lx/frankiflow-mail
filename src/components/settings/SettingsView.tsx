@@ -833,7 +833,9 @@ export function SettingsView() {
               <div className={styles.metaItem}>
                 <dt className={styles.metaLabel}>{t('settings.account.roleLabel')}</dt>
                 <dd className={styles.metaValue}>
-                  <Badge tone="neutral">{session?.role ?? 'member'}</Badge>
+                  <Badge tone="neutral" className={styles.rolePill}>
+                    {t(session?.role === 'admin' ? 'settings.account.roleAdmin' : 'settings.account.roleMember')}
+                  </Badge>
                 </dd>
               </div>
             </dl>
@@ -966,6 +968,7 @@ export function SettingsView() {
             </Button>
             <Button
               variant="danger"
+              className={styles.dangerBtn}
               loading={deletingTemplate}
               onClick={() => void handleConfirmDeleteTemplate()}
             >
@@ -998,6 +1001,7 @@ export function SettingsView() {
             </Button>
             <Button
               variant="danger"
+              className={styles.dangerBtn}
               onClick={() => {
                 const exit = pendingExit;
                 setLeaveDialogOpen(false);

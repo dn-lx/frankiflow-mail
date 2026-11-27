@@ -133,3 +133,4 @@ describe('mapAuthError', () => {
     assert.equal(mapAuthError(undefined, true, t), 'auth.error.generic');
   });
 });
+

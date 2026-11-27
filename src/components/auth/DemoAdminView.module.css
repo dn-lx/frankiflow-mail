@@ -190,7 +190,8 @@
 .userMeta {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  align-items: flex-start;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -206,7 +207,15 @@
   color: var(--color-text);
 }
 
+.rolePill {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-strong);
+}
+
 .userEmail {
+  margin: 0;
+  padding: 0;
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   font-family: var(--font-mono);
@@ -215,8 +224,19 @@
 .mailboxBadges {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1);
-  margin-top: 2px;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  margin: 0;
+  padding: 0;
+}
+
+.mailboxAddr {
+  margin: 0;
+  padding: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
 }
 
 .userActions {
@@ -280,6 +300,26 @@
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   margin-top: var(--space-1);
+}
+
+:global(:root[data-theme="dark"]) .dangerBtn {
+  --color-danger: #3a1f1e;
+  --color-danger-hover: #4d2624;
+  --color-on-danger: #fecaca;
+  background: #3a1f1e;
+  color: #fecaca;
+  border-color: #8c3a37;
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root[data-theme="system"]) .dangerBtn {
+    --color-danger: #3a1f1e;
+    --color-danger-hover: #4d2624;
+    --color-on-danger: #fecaca;
+    background: #3a1f1e;
+    color: #fecaca;
+    border-color: #8c3a37;
+  }
 }
 
 .dialogForm {

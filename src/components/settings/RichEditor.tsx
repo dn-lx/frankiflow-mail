@@ -159,6 +159,7 @@ export function RichEditor({
             icon="bold"
             label={t('settings.editor.bold')}
             size="sm"
+            className={styles.toolbarBtn}
             disabled={disabled}
             onMouseDown={(e) => {
               e.preventDefault();
@@ -170,6 +171,7 @@ export function RichEditor({
             icon="italic"
             label={t('settings.editor.italic')}
             size="sm"
+            className={styles.toolbarBtn}
             disabled={disabled}
             onMouseDown={(e) => {
               e.preventDefault();
@@ -181,6 +183,7 @@ export function RichEditor({
             icon="link"
             label={t('settings.editor.link')}
             size="sm"
+            className={styles.toolbarBtn}
             pressed={linkOpen}
             disabled={disabled}
             onMouseDown={(e) => {
