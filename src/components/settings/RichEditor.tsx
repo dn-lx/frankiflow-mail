@@ -1,64 +1,23 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
-import DOMPurify from 'dompurify';
 import { useApp } from '@/components/providers/AppProvider';
 import { Button, IconButton } from '@/components/ui';
+import { SAFE_LINK_RE, sanitizeEditorHtml } from './sanitize';
 import './strings';
 import styles from './SettingsView.module.css';
 
-const ALLOWED_TAGS = [
-  'p',
-  'br',
-  'strong',
-  'b',
-  'em',
-  'i',
-  'u',
-  'a',
-  'ul',
-  'ol',
-  'li',
-  'span',
-  'div',
-];
-
-const ALLOWED_ATTR = ['href', 'target', 'rel'];
-
-const SAFE_LINK_RE = /^(https?:\/\/|mailto:)[^\s]+$/i;
-
-/**
- * Sanitizes signature or template HTML with DOMPurify and ensures safe links.
- */
-export function sanitizeEditorHtml(rawHtml: string): string {
-  if (typeof window === 'undefined') {
-    return rawHtml;
-  }
-  const clean = DOMPurify.sanitize(rawHtml, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
-  });
-  const doc = new DOMParser().parseFromString(clean, 'text/html');
-  doc.querySelectorAll('a').forEach((anchor) => {
-    const href = (anchor.getAttribute('href') ?? '').trim();
-    if (!SAFE_LINK_RE.test(href)) {
-      anchor.removeAttribute('href');
-    } else {
-      anchor.setAttribute('target', '_blank');
-      anchor.setAttribute('rel', 'noopener noreferrer');
-    }
-  });
-  return doc.body.innerHTML;
-}
+export { sanitizeEditorHtml };
 
 /**
  * Replaces the children of an element with sanitized DOM nodes without using dangerouslySetInnerHTML.
  */
-function populateEditorDom(el: HTMLDivElement, html: string): void {
+function populateEditorDom(el: HTMLDivElement, html: string): string {
   const clean = sanitizeEditorHtml(html);
   const doc = new DOMParser().parseFromString(clean, 'text/html');
   const nodes = Array.from(doc.body.childNodes);
   el.replaceChildren(...nodes);
+  return sanitizeEditorHtml(el.innerHTML);
 }
 
 export interface RichEditorProps {
@@ -94,9 +53,9 @@ export function RichEditor({
     const el = editorRef.current;
     if (!el) return;
     if (loadedContextRef.current !== contextKey || (value !== lastEmittedRef.current && document.activeElement !== el)) {
-      populateEditorDom(el, value);
+      const normalized = populateEditorDom(el, value);
       loadedContextRef.current = contextKey;
-      lastEmittedRef.current = value;
+      lastEmittedRef.current = normalized;
     }
   }, [contextKey, value]);
 
@@ -104,6 +63,7 @@ export function RichEditor({
     const el = editorRef.current;
     if (!el) return;
     const sanitized = sanitizeEditorHtml(el.innerHTML);
+    if (sanitized === lastEmittedRef.current) return;
     lastEmittedRef.current = sanitized;
     onChange(sanitized);
   };

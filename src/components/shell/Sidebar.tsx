@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type CSSProperties } from 'react';
 import { useApp } from '@/components/providers/AppProvider';
-import { Button, Icon, IconButton, Select, useToast } from '@/components/ui';
+import { Badge, Button, Icon, IconButton, Select, useToast } from '@/components/ui';
 import type { Folder, Label, Mailbox } from '@/lib/backend/types';
 import { describeError } from '@/lib/i18n';
 import { CreateLabelDialog, DeleteLabelDialog } from './LabelDialogs';
@@ -70,6 +70,12 @@ export function Sidebar({ view, mailboxes, labels, counts, metaError, onRetryMet
         >
           {t('shell.compose')}
         </Button>
+        {mode === 'demo' && (
+          <Badge tone="warning" title={t('demo.badgeLabel')} className={styles.demoBadge}>
+            <span aria-hidden="true">{t('demo.badge')}</span>
+            <span className="sr-only">{t('demo.badgeLabel')}</span>
+          </Badge>
+        )}
         {onClose && <IconButton icon="x" label={t('shell.closeMenu')} onClick={onClose} />}
       </div>
 

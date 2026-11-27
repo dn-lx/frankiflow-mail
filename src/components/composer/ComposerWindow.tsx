@@ -23,7 +23,7 @@ import { Select } from '../ui/Select';
 import { Skeleton } from '../ui/Skeleton';
 import { TextField } from '../ui/TextField';
 import { useToast } from '../ui/Toast';
-import { cleanComposeHtml, cleanHtml, htmlToText, ownText } from './html';
+import { cleanComposeHtml, cleanHtml, htmlKit, htmlToText, ownText } from './html';
 import { RecipientInput, type RecipientInputHandle } from './RecipientInput';
 import { RichEditor, type RichEditorHandle } from './RichEditor';
 import { buildSnapshot, loadDraftMessage, pickSignature, sendableMailboxes } from './snapshot';
@@ -223,7 +223,10 @@ export function ComposerWindow(props: ComposerWindowProps) {
   useEffect(() => {
     if (snapshot || resources.status !== 'ready' || draftState !== 'idle') return;
     if (needsDraft && !draftMessage) return;
-    const built = buildSnapshot(entry.init, draftMessage, resources.mailboxes, resources.signatures, lang, t);
+    const built = buildSnapshot(entry.init, draftMessage, resources.mailboxes, resources.signatures, lang, t, {
+      html: htmlKit(),
+      formatDate: (iso) => formatFullDate(iso, lang),
+    });
     if (built) setSnapshot(built);
     else setNoMailbox(true);
   }, [snapshot, resources, draftState, needsDraft, draftMessage, entry.init, lang, t]);
@@ -342,6 +345,10 @@ function ComposerForm({
   const state = { mailboxId, to, cc, bcc, showCc, showBcc, subject, attachments };
   const stateRef = useRef(state);
   stateRef.current = state;
+  /** Updates the latest-values ref synchronously, before the next render (save and send read it). */
+  const patchState = (patch: Partial<typeof state>) => {
+    stateRef.current = { ...stateRef.current, ...patch };
+  };
 
   const sendable = sendableMailboxes(resources.mailboxes);
   const offlineLive = !online && mode === 'live';
@@ -479,20 +486,29 @@ function ComposerForm({
   /* ----- field changes ----- */
 
   const changeTo = (next: Recipient[]) => {
+    patchState({ to: next });
     setTo(next);
     markChanged();
   };
   const changeCc = (next: Recipient[]) => {
+    patchState({ cc: next });
     setCc(next);
     markChanged();
   };
   const changeBcc = (next: Recipient[]) => {
+    patchState({ bcc: next });
     setBcc(next);
+    markChanged();
+  };
+  const changeSubject = (next: string) => {
+    patchState({ subject: next });
+    setSubject(next);
     markChanged();
   };
 
   const changeFrom = (id: string) => {
     if (id === stateRef.current.mailboxId) return;
+    patchState({ mailboxId: id });
     setMailboxId(id);
     editor.current?.setSignature(pickSignature(resources.signatures, id)?.html);
     if (editor.current) lastHtml.current = editor.current.getHtml();
@@ -500,6 +516,9 @@ function ComposerForm({
   };
 
   const onEditorInput = () => {
+    // Keep the latest body HTML in sync: during unmount the editor ref is already
+    // detached, and buildDraft() then falls back to lastHtml.
+    lastHtml.current = editor.current?.getHtml() ?? lastHtml.current;
     markChanged();
   };
 
@@ -776,6 +795,7 @@ function ComposerForm({
           className={styles.linkButton}
           aria-label={t('composer.addCc')}
           onClick={() => {
+            patchState({ showCc: true });
             setShowCc(true);
             window.requestAnimationFrame(() => ccHandle.current?.focus());
           }}
@@ -789,6 +809,7 @@ function ComposerForm({
           className={styles.linkButton}
           aria-label={t('composer.addBcc')}
           onClick={() => {
+            patchState({ showBcc: true });
             setShowBcc(true);
             window.requestAnimationFrame(() => bccHandle.current?.focus());
           }}
@@ -871,10 +892,7 @@ function ComposerForm({
               type="text"
               value={subject}
               maxLength={998}
-              onChange={(e) => {
-                setSubject(e.target.value);
-                markChanged();
-              }}
+              onChange={(e) => changeSubject(e.target.value)}
             />
           </div>
         </div>

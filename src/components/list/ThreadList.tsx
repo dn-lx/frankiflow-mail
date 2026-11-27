@@ -323,7 +323,12 @@ export function ThreadList({
     );
   } else {
     body = (
-      <ul role="list" className={styles.rows} aria-labelledby={id ? `${id}-title` : undefined} aria-label={id ? undefined : title}>
+      <ul
+        role="list"
+        className={styles.rows}
+        aria-labelledby={id && selectedIds.length === 0 ? `${id}-title` : undefined}
+        aria-label={id && selectedIds.length === 0 ? undefined : title}
+      >
         {threads.map((th) => (
           <ThreadRow
             key={th.id}

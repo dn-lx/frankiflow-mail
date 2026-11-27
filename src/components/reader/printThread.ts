@@ -1,6 +1,7 @@
 import type { Message } from '@/lib/backend/types';
 import { formatFullDate, type Lang, type TranslateVars } from '@/lib/i18n';
 import { sanitizeEmailHtml } from '@/lib/mail/sanitize';
+import { PRINT_FRAME_SANDBOX, cspMetaTag } from './frame-policy';
 
 function escapeHtml(text: string): string {
   return text
@@ -17,8 +18,7 @@ export function openPrintView(
   t: (key: string, vars?: TranslateVars) => string,
   allowRemoteImages: boolean,
 ): boolean {
-  const win = window.open('', '_blank', 'noopener,noreferrer');
-  if (!win) return false;
+  if (typeof document === 'undefined') return false;
 
   const renderedMessages = messages
     .map((m) => {
@@ -44,6 +44,7 @@ export function openPrintView(
   const html = `<!doctype html>
 <html lang="${lang}">
 <head>
+${cspMetaTag(allowRemoteImages)}
 <meta charset="utf-8">
 <meta name="referrer" content="no-referrer">
 <title>${escapeHtml(subject || t('reader.noSubject'))}</title>
@@ -66,12 +67,55 @@ export function openPrintView(
 <body>
   <h1>${escapeHtml(subject || t('reader.noSubject'))}</h1>
   ${renderedMessages}
-  <script>window.addEventListener('load', function () { window.print(); });</script>
 </body>
 </html>`;
 
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
+  // Hidden, script-less sandboxed frame with the same CSP as the reader frame.
+  // `allow-same-origin` lets the parent call print(); without `allow-scripts`
+  // nothing inside the email can execute.
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('sandbox', PRINT_FRAME_SANDBOX);
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.setAttribute('tabindex', '-1');
+  iframe.title = subject || t('reader.noSubject');
+  iframe.style.cssText =
+    'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none;';
+
+  let removed = false;
+  const cleanup = () => {
+    if (removed) return;
+    removed = true;
+    iframe.remove();
+  };
+
+  iframe.addEventListener(
+    'load',
+    () => {
+      const win = iframe.contentWindow;
+      if (!win) {
+        cleanup();
+        return;
+      }
+      try {
+        win.addEventListener('afterprint', () => window.setTimeout(cleanup, 0), { once: true });
+        win.focus();
+        win.print();
+      } catch {
+        cleanup();
+        return;
+      }
+      // Fallback for browsers that never fire afterprint on the frame.
+      window.setTimeout(cleanup, 60_000);
+    },
+    { once: true },
+  );
+
+  iframe.srcdoc = html;
+  try {
+    document.body.appendChild(iframe);
+  } catch {
+    cleanup();
+    return false;
+  }
   return true;
 }

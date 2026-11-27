@@ -329,7 +329,8 @@ export function RichEditor({ initialHtml, label, onInput, onFiles, t, handleRef 
       return;
     }
     e.preventDefault();
-    const clean = html ? cleanPastedHtml(html) : textToHtml(text);
+    // Rich HTML that is stripped to nothing falls back to the plain text.
+    const clean = (html ? cleanPastedHtml(html) : '') || textToHtml(text);
     if (!clean) return;
     document.execCommand('insertHTML', false, clean);
     changed();

@@ -258,7 +258,7 @@ export function createDemoBackend(storage?: Storage): MailBackend {
 
   async function maybeDelay(): Promise<void> {
     if (skipLatency) return;
-    const ms = 120 + Math.floor(Math.random() * 181);
+    const ms = 40 + Math.floor(Math.random() * 81);
     await new Promise<void>((resolve) => setTimeout(resolve, ms));
   }
 
@@ -389,7 +389,6 @@ export function createDemoBackend(storage?: Storage): MailBackend {
     mode: 'demo',
 
     async getSession(): Promise<UserSession | null> {
-      await maybeDelay();
       const state = await ensureState();
       const session = loadSession(store);
       if (!session) return null;
@@ -496,7 +495,6 @@ export function createDemoBackend(storage?: Storage): MailBackend {
     },
 
     async listMailboxes(): Promise<Mailbox[]> {
-      await maybeDelay();
       const state = await ensureState();
       const { user } = requireUser(state);
       const visibleIds = getVisibleMailboxIds(state, user);
@@ -539,6 +537,11 @@ export function createDemoBackend(storage?: Storage): MailBackend {
 
       const summaries: ThreadSummary[] = [];
 
+      // Trash, spam and drafts are listed by their own messages. Every other
+      // folder shows the whole conversation, minus trash, spam and drafts.
+      const ownFolderOnly =
+        q.folder === 'trash' || q.folder === 'spam' || q.folder === 'drafts';
+
       for (const [threadId, msgs] of byThread.entries()) {
         const folderMsgs = msgs.filter((m) => messageMatchesFolder(m, q.folder));
         if (folderMsgs.length === 0) continue;
@@ -552,7 +555,19 @@ export function createDemoBackend(storage?: Storage): MailBackend {
           continue;
         }
 
-        const sorted = [...folderMsgs].sort((a, b) => {
+        const conversationMsgs = ownFolderOnly
+          ? folderMsgs
+          : msgs.filter(
+              (m) =>
+                m.folder !== 'trash' &&
+                m.folder !== 'spam' &&
+                m.direction !== 'draft'
+            );
+        // A thread listed in a folder always has at least its folder messages.
+        const summaryMsgs =
+          conversationMsgs.length > 0 ? conversationMsgs : folderMsgs;
+
+        const sorted = [...summaryMsgs].sort((a, b) => {
           const tsA = messageTimestamp(a);
           const tsB = messageTimestamp(b);
           if (tsA !== tsB) return tsA < tsB ? -1 : 1;
@@ -573,6 +588,10 @@ export function createDemoBackend(storage?: Storage): MailBackend {
           mailboxSet.add(m.mailboxId);
         }
 
+        // Flags keep the folder messages in the mix, so e.g. a starred trash
+        // message still marks the thread as starred in the starred list.
+        const flagMsgs = [...sorted, ...folderMsgs];
+
         summaries.push({
           id: threadId,
           subject: latest.subject,
@@ -581,10 +600,10 @@ export function createDemoBackend(storage?: Storage): MailBackend {
           unreadCount,
           participants: Array.from(participantSet),
           preview: latest.preview,
-          isStarred: sorted.some((m) => m.isStarred),
-          isPinned: sorted.some((m) => m.isPinned),
-          priority: highestPriority(sorted),
-          hasAttachments: sorted.some(
+          isStarred: flagMsgs.some((m) => m.isStarred),
+          isPinned: flagMsgs.some((m) => m.isPinned),
+          priority: highestPriority(flagMsgs),
+          hasAttachments: flagMsgs.some(
             (m) => m.hasAttachments || m.attachments.length > 0
           ),
           labelIds: Array.from(labelSet),
@@ -775,7 +794,6 @@ export function createDemoBackend(storage?: Storage): MailBackend {
     },
 
     async counts(mailboxId?: string): Promise<Partial<Record<Folder, number>>> {
-      await maybeDelay();
       const state = await ensureState();
       const { user } = requireUser(state);
       const visibleIds = getVisibleMailboxIds(state, user);
@@ -820,7 +838,6 @@ export function createDemoBackend(storage?: Storage): MailBackend {
     },
 
     async listLabels(): Promise<Label[]> {
-      await maybeDelay();
       const state = await ensureState();
       requireUser(state);
       return state.labels.map((l) => ({ ...l }));
@@ -1166,7 +1183,6 @@ export function createDemoBackend(storage?: Storage): MailBackend {
     },
 
     async getSettings(): Promise<Settings> {
-      await maybeDelay();
       const state = await ensureState();
       const { user } = requireUser(state);
       ensureUserDefaults(state, user);

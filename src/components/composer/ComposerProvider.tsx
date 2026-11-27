@@ -126,8 +126,9 @@ export function ComposerProvider({ children }: { children: ReactNode }) {
             return;
           }
         }
+        // Covers both the undo countdown and a send that is already in flight.
         for (const p of pending.current.values()) {
-          if (p.request.snapshot.draftId === draftId && !p.started) {
+          if (p.request.snapshot.draftId === draftId) {
             notify({ message: tr('composer.alreadySending') });
             return;
           }

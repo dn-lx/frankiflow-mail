@@ -6,20 +6,11 @@ import { useRouter } from 'next/navigation';
 import { setMode } from '@/lib/backend';
 import { useApp } from '@/components/providers/AppProvider';
 import { Badge, Button, TextField, useToast } from '@/components/ui';
+import { mapAuthError } from './helpers';
 import './strings';
 import styles from './LoginView.module.css';
 
-export function mapAuthError(
-  rawCode: string | undefined,
-  online: boolean,
-  t: (key: string) => string,
-): string {
-  const code = (rawCode ?? '').trim();
-  if (code === 'auth:invalid') return t('auth.error.invalid');
-  if (code === 'auth:not-authorized') return t('auth.error.notAuthorized');
-  if (code === 'network:offline' || !online) return t('auth.error.offline');
-  return t('auth.error.generic');
-}
+export { mapAuthError };
 
 export function LoginView() {
   const { backend, mode, t, lang, setSettings, refreshSession, online } = useApp();

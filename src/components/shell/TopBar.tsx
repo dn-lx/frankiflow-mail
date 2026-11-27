@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type Ref } from 'react';
 import { useApp } from '@/components/providers/AppProvider';
-import { Button, Icon, IconButton } from '@/components/ui';
+import { Badge, Button, Icon, IconButton } from '@/components/ui';
 import { filterTokens, removeToken, type SearchToken } from '@/lib/mail/search';
 import styles from './AppShell.module.css';
 import './strings';
@@ -26,7 +26,7 @@ export function chipText(tok: SearchToken, t: (key: string) => string): string {
     case 'is':
       return tok.valid ? t(`search.is.${tok.value}`) : `is:${tok.value}`;
     case 'has':
-      return t('search.op.has');
+      return tok.valid ? t('search.op.has') : `has:${tok.value}`;
     case 'text':
       return tok.value;
     default:
@@ -35,7 +35,7 @@ export function chipText(tok: SearchToken, t: (key: string) => string): string {
 }
 
 export function TopBar({ query, onSearch, inputRef, showMenuButton, menuOpen, onOpenMenu, menuButtonRef, onHelp }: TopBarProps) {
-  const { t } = useApp();
+  const { mode, t } = useApp();
   const inputId = useId();
   const [text, setText] = useState(query);
   const lastEmitted = useRef(query);
@@ -161,15 +161,37 @@ export function TopBar({ query, onSearch, inputRef, showMenuButton, menuOpen, on
           </ul>
         )}
       </div>
+      {mode === 'demo' && (
+        <Badge tone="warning" title={t('demo.badgeLabel')} className={[styles.demoBadge, styles.topBarDemo].join(' ')}>
+          <span aria-hidden="true">{t('demo.badge')}</span>
+          <span className="sr-only">{t('demo.badgeLabel')}</span>
+        </Badge>
+      )}
       <Button
         variant="ghost"
         size="sm"
         className={styles.helpButton}
-        aria-label={t('help.open')}
-        title={`${t('help.open')} (?)`}
+        aria-label={`${t('help.title')} – ${t('help.open')}`}
+        title={`${t('help.title')} (?)`}
         aria-keyshortcuts="?"
         onClick={onHelp}
       >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width={18}
+          height={18}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          focusable="false"
+          aria-hidden="true"
+        >
+          <rect x="2" y="5" width="20" height="14" rx="2" />
+          <path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M8 13h.01M12 13h.01M16 13h.01M7 16h10" />
+        </svg>
         <span aria-hidden="true">?</span>
       </Button>
     </header>

@@ -128,11 +128,12 @@ export function useThreadList(query: ThreadListQuery): ThreadListData {
     const loaded = baseRef.current.length;
     const limit = Math.min(Math.max(PAGE_SIZE, loaded), MAX_REFRESH);
     setRefreshing(true);
+    extrasKeys.current.clear();
     try {
       const res = await fetchPage(limit);
       if (g !== gen.current) return;
       setBase((cur) => mergeThreads(cur, res.threads, !res.nextBefore));
-      if (loaded <= limit) setNextBefore(res.nextBefore);
+      if (baseRef.current.length <= limit) setNextBefore(res.nextBefore);
       setStatus('ready');
       setError(undefined);
     } catch (err) {
@@ -206,14 +207,19 @@ export function useThreadList(query: ThreadListQuery): ThreadListData {
             const scheduled = msgs.filter((m) => m.scheduledAt).map((m) => m.scheduledAt as string).sort();
             return [t.id, { snoozedUntil: snoozed[snoozed.length - 1], scheduledAt: scheduled[0] }] as const;
           },
-          () => [t.id, {}] as const,
+          () => {
+            extrasKeys.current.delete(t.id);
+            return [t.id, null] as const;
+          },
         ),
       ),
     ).then((entries) => {
       if (g !== gen.current) return;
       setExtras((cur) => {
         const next = { ...cur };
-        for (const [id, ex] of entries) next[id] = ex;
+        for (const [id, ex] of entries) {
+          if (ex !== null) next[id] = ex;
+        }
         return next;
       });
     });

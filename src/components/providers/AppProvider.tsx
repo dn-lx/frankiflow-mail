@@ -274,12 +274,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         </div>
       )}
       {content}
-      {mode === 'demo' && (
-        <span className={styles.demo} title={t('demo.badgeLabel')}>
-          <span aria-hidden="true">{t('demo.badge')}</span>
-          <span className="sr-only">{t('demo.badgeLabel')}</span>
-        </span>
-      )}
     </AppContext.Provider>
   );
 }

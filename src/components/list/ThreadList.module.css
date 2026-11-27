@@ -68,6 +68,12 @@
   padding: 0;
 }
 
+@media (max-width: 699px) {
+  .scroller {
+    padding-bottom: calc(57px + env(safe-area-inset-bottom));
+  }
+}
+
 /* Row */
 .row {
   position: relative;

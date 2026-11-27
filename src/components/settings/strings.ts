@@ -241,6 +241,10 @@ export const SETTINGS_STRINGS = {
     de: 'Signatur gespeichert.',
     en: 'Signature saved.',
   },
+  'settings.signatures.defaultGreeting': {
+    de: 'Mit freundlichen Grüßen',
+    en: 'Kind regards',
+  },
   'settings.signatures.emptyTitle': {
     de: 'Keine Postfächer verfügbar',
     en: 'No mailboxes available',
@@ -392,6 +396,14 @@ export const SETTINGS_STRINGS = {
   'settings.account.passwordTooShort': {
     de: 'Das Passwort muss mindestens 8 Zeichen lang sein.',
     en: 'Password must be at least 8 characters long.',
+  },
+  'settings.account.passwordTooShortLive': {
+    de: 'Das Passwort muss im Live-Modus mindestens 12 Zeichen lang sein.',
+    en: 'Password must be at least 12 characters long in live mode.',
+  },
+  'settings.account.passwordErrorGeneric': {
+    de: 'Das Passwort konnte nicht geändert werden.',
+    en: 'Password could not be updated.',
   },
   'settings.account.passwordMismatch': {
     de: 'Die beiden Passwörter stimmen nicht überein.',

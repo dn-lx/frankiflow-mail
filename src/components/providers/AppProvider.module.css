@@ -59,31 +59,3 @@
 .offline svg {
   flex: none;
 }
-
-.demo {
-  position: fixed;
-  z-index: var(--z-banner);
-  left: calc(var(--space-3) + env(safe-area-inset-left));
-  bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
-  padding: 2px var(--space-3);
-  border-radius: var(--radius-pill);
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
-  border: 1px solid currentColor;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.08em;
-  pointer-events: none;
-  user-select: none;
-}
-
-/* Phones: top-right, clear of the bottom action bar. */
-@media (max-width: 640px) {
-  .demo {
-    left: auto;
-    bottom: auto;
-    right: calc(var(--space-2) + env(safe-area-inset-right));
-    top: calc(var(--space-1) + env(safe-area-inset-top));
-    padding: 0 var(--space-2);
-  }
-}

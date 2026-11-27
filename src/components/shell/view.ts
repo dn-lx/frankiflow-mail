@@ -1,4 +1,4 @@
-import type { Folder } from '@/lib/backend/types';
+import type { Folder } from '../../lib/backend/types.ts';
 
 /** The open view; lives in the query string: /mail/?m=&f=&l=&q=&t= */
 export interface MailView {
