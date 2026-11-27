@@ -27,6 +27,12 @@ registerStrings({
   'composer.to': { de: 'An', en: 'To' },
   'composer.subject': { de: 'Betreff', en: 'Subject' },
   'composer.body': { de: 'Nachrichtentext', en: 'Message text' },
+  'composer.subjectPlaceholder': { de: 'Betreff eingeben', en: 'Enter a subject' },
+  'composer.bodyPlaceholder': { de: 'Nachricht schreiben…', en: 'Write your message…' },
+  'composer.recipient.invalidShort': { de: 'Ungültige Adresse', en: 'Invalid address' },
+  'composer.more': { de: 'Weitere Aktionen', en: 'More actions' },
+  'composer.more.scheduleItem': { de: 'Später senden: {when}', en: 'Send later: {when}' },
+  'composer.more.templateItem': { de: 'Vorlage: {name}', en: 'Template: {name}' },
   'composer.addCc': { de: 'Cc-Empfänger hinzufügen', en: 'Add Cc recipients' },
   'composer.addBcc': { de: 'Bcc-Empfänger hinzufügen', en: 'Add Bcc recipients' },
 

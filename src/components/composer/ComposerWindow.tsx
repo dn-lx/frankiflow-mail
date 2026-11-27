@@ -165,22 +165,33 @@ function Frame({
           </button>
         </h2>
         <div className={styles.titleActions}>
-          <IconButton
-            icon="chevron-down"
-            size="sm"
-            className={minimized ? styles.flip : undefined}
-            label={minimized ? t('composer.restore') : t('composer.minimize')}
-            onClick={onToggleMinimize}
-          />
+          {/* Full screen (phones, tablets): minimising has no visible place to go, so it is only offered to restore. */}
+          {(!phone || minimized) && (
+            <IconButton
+              icon="chevron-down"
+              size="sm"
+              className={[styles.headerButton, minimized && styles.flip].filter(Boolean).join(' ')}
+              label={minimized ? t('composer.restore') : t('composer.minimize')}
+              onClick={onToggleMinimize}
+            />
+          )}
           {!phone && (
             <IconButton
               icon={expanded ? 'minimize' : 'maximize'}
               size="sm"
+              className={styles.headerButton}
               label={expanded ? t('composer.collapse') : t('composer.expand')}
               onClick={onToggleExpand}
             />
           )}
-          <IconButton icon="x" size="sm" label={t('composer.closeSave')} loading={closing} onClick={onClose} />
+          <IconButton
+            icon="x"
+            size="sm"
+            className={styles.headerButton}
+            label={t('composer.closeSave')}
+            loading={closing}
+            onClick={onClose}
+          />
         </div>
       </header>
       <div className={[styles.body, minimized && styles.bodyHidden].filter(Boolean).join(' ')}>{children}</div>
@@ -314,6 +325,8 @@ function ComposerForm({
   const [status, setStatus] = useState<SaveStatus>(initial.draftId && !initial.dirty ? 'saved' : 'idle');
   const [attachError, setAttachError] = useState('');
   const [sendError, setSendError] = useState(entry.error ?? '');
+  /** Send was blocked by invalid recipients; the inline message stays until they are fixed. */
+  const [invalidBlocked, setInvalidBlocked] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleValue, setScheduleValue] = useState('');
@@ -671,9 +684,12 @@ function ComposerForm({
     }
     const invalid = [...lists.to, ...lists.cc, ...lists.bcc].filter((r) => !isValidEmail(r.address));
     if (invalid.length) {
-      setSendError(t('composer.validate.invalid', { list: invalid.map((r) => r.address).join(', ') }));
+      // Shown inline above the footer for as long as invalid chips remain.
+      setSendError('');
+      setInvalidBlocked(true);
       return;
     }
+    setInvalidBlocked(false);
     if (!skipWarnings) {
       const warnings: string[] = [];
       if (!stateRef.current.subject.trim()) warnings.push(t('composer.warn.noSubject'));
@@ -758,6 +774,32 @@ function ComposerForm({
     ? resources.templates.map((tpl) => ({ id: tpl.id, label: tpl.name, onSelect: () => insertTemplate(tpl) }))
     : [{ id: 'none', label: t('composer.templates.none'), onSelect: () => undefined, disabled: true }];
 
+  const moreItems: MenuItem[] = [
+    ...scheduleItems.map((item): MenuItem =>
+      'separator' in item
+        ? { id: `schedule-${item.id}`, separator: true }
+        : {
+            ...item,
+            id: `schedule-${item.id}`,
+            label: t('composer.more.scheduleItem', { when: item.label }),
+            disabled: item.disabled || sending || offlineLive,
+          },
+    ),
+    { id: 'more-sep', separator: true },
+    ...templateItems.map((item): MenuItem =>
+      'separator' in item
+        ? item
+        : {
+            ...item,
+            id: `template-${item.id}`,
+            icon: 'file',
+            label: item.disabled ? item.label : t('composer.more.templateItem', { name: item.label }),
+          },
+    ),
+  ];
+
+  const invalidList = invalidBlocked ? [...to, ...cc, ...bcc].filter((r) => !isValidEmail(r.address)) : [];
+
   /* ----- keyboard ----- */
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
@@ -840,13 +882,6 @@ function ComposerForm({
           <span>{t('composer.offline')}</span>
         </div>
       )}
-      {sendError && (
-        <div className={styles.alert} role="alert">
-          <Icon name="alert" size={16} />
-          <span className={styles.alertText}>{sendError}</span>
-          <IconButton icon="x" size="sm" label={t('common.close')} onClick={() => setSendError('')} />
-        </div>
-      )}
       <div className={styles.scroll}>
         <div className={styles.fields}>
           <div className={styles.fieldRow}>
@@ -890,6 +925,7 @@ function ComposerForm({
               id={subjectId}
               className={styles.subjectInput}
               type="text"
+              placeholder={t('composer.subjectPlaceholder')}
               value={subject}
               maxLength={998}
               onChange={(e) => changeSubject(e.target.value)}
@@ -901,6 +937,7 @@ function ComposerForm({
           handleRef={editor}
           initialHtml={initial.html}
           label={t('composer.body')}
+          placeholder={t('composer.bodyPlaceholder')}
           onInput={onEditorInput}
           onFiles={addFiles}
           t={t}
@@ -932,6 +969,21 @@ function ComposerForm({
         )}
       </div>
 
+      {invalidList.length > 0 && (
+        <div className={[styles.alert, styles.footerAlert].join(' ')} role="alert">
+          <Icon name="alert" size={16} />
+          <span className={styles.alertText}>
+            {t('composer.validate.invalid', { list: invalidList.map((r) => r.address).join(', ') })}
+          </span>
+        </div>
+      )}
+      {sendError && (
+        <div className={[styles.alert, styles.footerAlert].join(' ')} role="alert">
+          <Icon name="alert" size={16} />
+          <span className={styles.alertText}>{sendError}</span>
+          <IconButton icon="x" size="sm" label={t('common.close')} onClick={() => setSendError('')} />
+        </div>
+      )}
       <footer className={styles.footer}>
         <div className={styles.sendGroup}>
           <Button
@@ -945,6 +997,7 @@ function ComposerForm({
             {t('composer.send')}
           </Button>
           <Menu
+            className={styles.wideOnly}
             label={t('composer.schedule')}
             icon="clock"
             items={scheduleItems}
@@ -965,7 +1018,16 @@ function ComposerForm({
             e.target.value = '';
           }}
         />
-        <Menu label={t('composer.templates')} icon="file" items={templateItems} placement="top" align="start" />
+        <Menu
+          className={styles.wideOnly}
+          label={t('composer.templates')}
+          icon="file"
+          items={templateItems}
+          placement="top"
+          align="start"
+        />
+        {/* Narrow widths: schedule and templates move into one overflow menu so the bar stays on one row. */}
+        <Menu className={styles.narrowOnly} label={t('composer.more')} items={moreItems} placement="top" align="start" />
         <span className={styles.status} role="status" aria-live="polite">
           {statusNode}
         </span>
@@ -987,12 +1049,12 @@ function ComposerForm({
         closeLabel={t('common.close')}
         size="sm"
         footer={
-          <>
+          <div className={styles.dialogActions}>
             <Button onClick={() => setConfirm(null)}>{t('common.cancel')}</Button>
             <Button variant="danger" loading={discarding} onClick={() => void discard()}>
               {t('composer.discardConfirm')}
             </Button>
-          </>
+          </div>
         }
       />
       <Dialog
@@ -1003,12 +1065,12 @@ function ComposerForm({
         closeLabel={t('common.close')}
         size="sm"
         footer={
-          <>
+          <div className={styles.dialogActions}>
             <Button onClick={() => setConfirm(null)}>{t('common.cancel')}</Button>
             <Button variant="danger" onClick={closeWithoutSaving}>
               {t('composer.closeWithoutSaving')}
             </Button>
-          </>
+          </div>
         }
       />
       <Dialog
@@ -1016,9 +1078,10 @@ function ComposerForm({
         onClose={() => setConfirm(null)}
         title={t('composer.warnTitle')}
         closeLabel={t('common.close')}
-        size="sm"
         footer={
-          <>
+          // Desktop: side by side, right aligned (primary on the right).
+          // Phones: full width, stacked, primary first (see .dialogActions).
+          <div className={styles.dialogActions}>
             <Button onClick={() => setConfirm(null)}>{t('composer.warnBack')}</Button>
             <Button
               variant="primary"
@@ -1031,7 +1094,7 @@ function ComposerForm({
             >
               {t('composer.warnSend')}
             </Button>
-          </>
+          </div>
         }
       >
         {confirm?.kind === 'warn' && (
@@ -1049,12 +1112,12 @@ function ComposerForm({
         closeLabel={t('common.close')}
         size="sm"
         footer={
-          <>
+          <div className={styles.dialogActions}>
             <Button onClick={() => setScheduleOpen(false)}>{t('common.cancel')}</Button>
             <Button variant="primary" icon="clock" onClick={submitSchedule}>
               {t('composer.schedule.confirm')}
             </Button>
-          </>
+          </div>
         }
       >
         <form

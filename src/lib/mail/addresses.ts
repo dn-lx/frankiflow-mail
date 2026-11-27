@@ -128,6 +128,35 @@ export function isValidEmail(value: string): boolean {
   return emailProblem(value) === null;
 }
 
+/**
+ * When Enter/Tab is pressed while a suggestion list is open: keep what was typed
+ * (instead of the highlighted suggestion) when it already looks like an address.
+ * `navigated` is true when the user moved through the suggestions with the arrow keys.
+ */
+export function preferTypedAddress(typed: string, navigated = false): boolean {
+  if (navigated) return false;
+  // Every complete address contains "@", so this also covers complete addresses.
+  return typed.trim().includes('@');
+}
+
+/**
+ * Display names known from a message's headers (From, To, Cc), keyed by lower-case address.
+ * Used to show "Katrin Weber" instead of the bare address on reply chips.
+ */
+export function namesFromMessage(message: Pick<Message, 'from' | 'to' | 'cc'>): Map<string, string> {
+  const names = new Map<string, string>();
+  const add = (address: string, name: string) => {
+    const key = cleanAddress(address).toLowerCase();
+    const n = name.replace(/\s+/g, ' ').trim();
+    if (key && n && n.toLowerCase() !== key && !names.has(key)) names.set(key, n);
+  };
+  add(message.from.address, message.from.name ?? '');
+  for (const entry of [...message.to, ...message.cc]) {
+    for (const p of parseAddressList(entry)) add(p.address, p.name);
+  }
+  return names;
+}
+
 /** `Name <address>`, quoting the name when needed; just the address when there is no distinct name. */
 export function formatAddress(input: { name?: string; address: string }): string {
   const address = input.address.trim();

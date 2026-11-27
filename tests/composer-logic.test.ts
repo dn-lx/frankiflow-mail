@@ -10,7 +10,9 @@ import type { ReplyMode } from '../src/lib/mail/addresses.ts';
 import {
   emailProblem,
   formatAddress,
+  namesFromMessage,
   parseAddressList,
+  preferTypedAddress,
   replyAllRecipients,
   replyRecipients,
   replySubject,
@@ -379,6 +381,31 @@ describe('toRecipients', () => {
   });
 });
 
+describe('recipient entry helpers', () => {
+  it('prefers the typed text over a suggestion when it contains "@"', () => {
+    assert.equal(preferTypedAddress('foo@'), true);
+    assert.equal(preferTypedAddress('katrin.weber@example.de'), true);
+    assert.equal(preferTypedAddress('  kat  '), false);
+    assert.equal(preferTypedAddress(''), false);
+  });
+
+  it('uses the suggestion after the user moved through the list with the arrow keys', () => {
+    assert.equal(preferTypedAddress('foo@', true), false);
+  });
+
+  it('collects display names from From, To and Cc', () => {
+    const names = namesFromMessage({
+      from: { address: 'Katrin.Weber@example.de', name: 'Katrin Weber' },
+      to: ['"Doe, John" <john@x.de>', 'plain@x.de'],
+      cc: ['Anna <anna@x.de>'],
+    });
+    assert.equal(names.get('katrin.weber@example.de'), 'Katrin Weber');
+    assert.equal(names.get('john@x.de'), 'Doe, John');
+    assert.equal(names.get('anna@x.de'), 'Anna');
+    assert.equal(names.has('plain@x.de'), false);
+  });
+});
+
 /* ------------------------------------------------------------------ */
 /* Window content (buildSnapshot)                                      */
 /* ------------------------------------------------------------------ */
@@ -418,6 +445,24 @@ describe('buildSnapshot', () => {
     assert.ok(snap.html.includes('data-ff-quote'));
     assert.ok(snap.html.includes('Hallo'));
     assert.ok(snap.html.includes('D(2026-01-01T10:00:00Z)'), 'quote header uses the injected date formatter');
+  });
+
+  it('shows the sender name on reply chips', () => {
+    const msg = makeMessage();
+    const snap = must(buildSnapshot({ mode: 'reply', message: msg }, msg, mailboxes, signatures, 'de', t, deps));
+    assert.equal(snap.to[0].name, 'Kunde GmbH');
+  });
+
+  it('starts new mails, replies and forwards with an empty paragraph above the signature', () => {
+    const msg = makeMessage();
+    for (const mode of ['new', 'reply', 'forward'] as const) {
+      const init: ComposeInit = mode === 'new' ? { mode } : { mode, message: msg };
+      const snap = must(buildSnapshot(init, mode === 'new' ? undefined : msg, mailboxes, signatures, 'de', t, deps));
+      assert.ok(snap.html.startsWith('<p><br></p><div data-ff-signature'), `${mode}: ${snap.html.slice(0, 60)}`);
+      const sig = snap.html.indexOf('data-ff-signature');
+      const quote = snap.html.indexOf('data-ff-quote');
+      if (mode !== 'new') assert.ok(quote > sig, `${mode}: quote below the signature`);
+    }
   });
 
   it('replies to the original recipients when replying to our own sent mail', () => {

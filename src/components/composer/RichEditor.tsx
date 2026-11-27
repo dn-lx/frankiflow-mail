@@ -24,13 +24,15 @@ export interface RichEditorHandle {
   setSignature(signatureHtml: string | undefined): void;
   /** Inserts HTML at the last caret position (or at the top). */
   insertHtml(html: string): void;
-  /** Focuses the editor with the caret at the start. */
+  /** Focuses the editor with the caret in the user's own text, above signature and quote. */
   focusStart(): void;
 }
 
 export interface RichEditorProps {
   initialHtml: string;
   label: string;
+  /** Shown in the empty first paragraph above the signature. */
+  placeholder: string;
   onInput: () => void;
   /** Image files pasted that are too big to inline, or other pasted files. */
   onFiles: (files: File[]) => void;
@@ -65,6 +67,54 @@ const TOOLS: ToolButton[] = [
 
 type ActiveState = Record<string, boolean>;
 
+/** Blocks that are not the user's own text: signature, quote header and quoted original. */
+const MARKER_SELECTOR = '[data-ff-signature],[data-ff-quote-header],[data-ff-quote]';
+/** Attribute that carries the placeholder text; never saved (DOMPurify drops unknown data-* attributes). */
+const PLACEHOLDER_ATTR = 'data-ff-placeholder';
+
+/** Top-level nodes before the first signature / quote block: where the user writes. */
+function ownNodes(root: HTMLElement): Node[] {
+  const out: Node[] = [];
+  for (const child of Array.from(root.childNodes)) {
+    if (child instanceof Element && child.matches(MARKER_SELECTOR)) break;
+    out.push(child);
+  }
+  return out;
+}
+
+function isBlank(node: Node): boolean {
+  if ((node.textContent ?? '').trim()) return false;
+  return !(node instanceof Element && node.querySelector('img,li,hr,table'));
+}
+
+/** True when `node` sits in the user's own text area of `root`. */
+function inOwnArea(root: HTMLElement, node: Node | null): boolean {
+  if (!node || node === root || !root.contains(node)) return false;
+  let n: Node = node;
+  while (n.parentNode && n.parentNode !== root) n = n.parentNode;
+  return ownNodes(root).includes(n);
+}
+
+/** Inline SVG for "clear formatting" (a T with a slash); decorative, the button has a label. */
+function ClearFormatIcon() {
+  return (
+    <svg
+      width={18}
+      height={18}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M5 5h12M11 5l-3 14M4 4l16 16" />
+    </svg>
+  );
+}
+
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -74,10 +124,18 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-export function RichEditor({ initialHtml, label, onInput, onFiles, t, handleRef }: RichEditorProps) {
+export function RichEditor({ initialHtml, label, placeholder, onInput, onFiles, t, handleRef }: RichEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const lastRange = useRef<Range | null>(null);
   const [active, setActive] = useState<ActiveState>({});
+  const [focused, setFocused] = useState(false);
+  /** Focus that comes from our own code (toolbar commands), not from the user entering the body. */
+  const programmaticFocus = useRef(false);
+  /** A pointer press started while the editor was not focused yet. */
+  const pointerEntry = useRef(false);
+  const pointerDown = useRef(false);
+  const placeholderRef = useRef(placeholder);
+  placeholderRef.current = placeholder;
   const [focusIndex, setFocusIndex] = useState(0);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -92,11 +150,77 @@ export function RichEditor({ initialHtml, label, onInput, onFiles, t, handleRef 
   onInputRef.current = onInput;
   const mod = isMac() ? '⌘' : 'Strg+';
 
+  /**
+   * Makes sure there is an own-text block above signature / quote (creates an empty
+   * paragraph when needed) and shows the placeholder on it while it is empty.
+   */
+  const syncOwnArea = useCallback((create = false): Node[] => {
+    const el = editorRef.current;
+    if (!el) return [];
+    let own = ownNodes(el).filter((n) => n.nodeType === Node.ELEMENT_NODE || (n.textContent ?? '').trim() !== '');
+    if (!own.length) {
+      // Only add a paragraph when asked (open / focus), never while the user is editing.
+      if (!create) return own;
+      const p = document.createElement('p');
+      p.appendChild(document.createElement('br'));
+      el.insertBefore(p, el.firstChild);
+      own = [p];
+    }
+    const empty = own.every(isBlank);
+    const first = own[0];
+    el.querySelectorAll(`[${PLACEHOLDER_ATTR}]`).forEach((n) => {
+      if (!empty || n !== first) n.removeAttribute(PLACEHOLDER_ATTR);
+    });
+    if (empty && first instanceof HTMLElement) first.setAttribute(PLACEHOLDER_ATTR, placeholderRef.current);
+    return own;
+  }, []);
+
+  /** Puts the caret at the end of the user's own text (start of the empty first paragraph). */
+  const placeCaretInOwnArea = useCallback(() => {
+    const el = editorRef.current;
+    const sel = typeof document !== 'undefined' ? document.getSelection() : null;
+    if (!el || !sel) return;
+    const own = syncOwnArea(true);
+    // Empty: the first paragraph (where the placeholder is); otherwise after the last own text.
+    const target = own.every(isBlank) ? own[0] : own[own.length - 1];
+    if (!target) return;
+    const r = document.createRange();
+    if (target.nodeType === Node.TEXT_NODE) {
+      r.setStart(target, (target.textContent ?? '').length);
+    } else if (target.nodeName === 'BR') {
+      r.setStartBefore(target);
+    } else if (target.nodeName === 'HR' || target.nodeName === 'IMG') {
+      r.setStartAfter(target);
+    } else if (isBlank(target)) {
+      r.setStart(target, 0);
+    } else {
+      r.selectNodeContents(target);
+      r.collapse(false);
+    }
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    lastRange.current = r.cloneRange();
+  }, [syncOwnArea]);
+
+  const selectionInOwnArea = (): boolean => {
+    const el = editorRef.current;
+    const sel = document.getSelection();
+    return !!el && !!sel && sel.rangeCount > 0 && inOwnArea(el, sel.anchorNode);
+  };
+
   // Initial content only; afterwards the DOM is the source of truth.
   useLayoutEffect(() => {
     const el = editorRef.current;
-    if (el) el.innerHTML = initialHtml || '<p><br></p>';
+    if (!el) return;
+    el.innerHTML = initialHtml || '<p><br></p>';
+    syncOwnArea(true);
   }, []);
+
+  // Language switch: update the placeholder text in place.
+  useEffect(() => {
+    syncOwnArea();
+  }, [placeholder, syncOwnArea]);
 
   const insideEditor = (node: Node | null) => !!node && !!editorRef.current && editorRef.current.contains(node);
 
@@ -138,10 +262,19 @@ export function RichEditor({ initialHtml, label, onInput, onFiles, t, handleRef 
     return () => document.removeEventListener('selectionchange', onSelection);
   }, [updateActive]);
 
+  const focusProgrammatically = (el: HTMLElement) => {
+    programmaticFocus.current = true;
+    try {
+      el.focus({ preventScroll: true });
+    } finally {
+      programmaticFocus.current = false;
+    }
+  };
+
   const restoreSelection = () => {
     const el = editorRef.current;
     if (!el) return;
-    if (document.activeElement !== el) el.focus({ preventScroll: true });
+    if (document.activeElement !== el) focusProgrammatically(el);
     const sel = document.getSelection();
     if (!sel) return;
     const range = lastRange.current;
@@ -158,6 +291,7 @@ export function RichEditor({ initialHtml, label, onInput, onFiles, t, handleRef 
   };
 
   const changed = () => {
+    syncOwnArea();
     onInputRef.current();
     updateActive();
   };
@@ -182,26 +316,23 @@ export function RichEditor({ initialHtml, label, onInput, onFiles, t, handleRef 
   useImperativeHandle(
     handleRef,
     () => ({
-      getHtml: () => editorRef.current?.innerHTML ?? '',
+      // The placeholder attribute is display-only; keep it out of saved HTML.
+      getHtml: () => (editorRef.current?.innerHTML ?? '').replace(/\sdata-ff-placeholder="[^"]*"/g, ''),
       setSignature: (signatureHtml) => {
         const block = editorRef.current?.querySelector('[data-ff-signature]');
         if (block) block.innerHTML = signatureInner(signatureHtml);
+        syncOwnArea();
       },
       insertHtml,
       focusStart: () => {
         const el = editorRef.current;
         if (!el) return;
-        el.focus({ preventScroll: true });
+        focusProgrammatically(el);
+        placeCaretInOwnArea();
         const sel = document.getSelection();
-        if (!sel) return;
-        const r = document.createRange();
-        const first = el.firstChild;
-        if (first) r.setStart(first, 0);
-        else r.setStart(el, 0);
-        r.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(r);
-        el.scrollTop = 0;
+        const node = sel && sel.rangeCount ? sel.anchorNode : null;
+        const block = node instanceof Element ? node : node?.parentElement;
+        block?.scrollIntoView?.({ block: 'nearest' });
       },
     }),
     [],
@@ -355,7 +486,7 @@ export function RichEditor({ initialHtml, label, onInput, onFiles, t, handleRef 
         ref={toolbarRef}
         role="toolbar"
         aria-label={t('composer.toolbar')}
-        className={styles.toolbar}
+        className={[styles.toolbar, focused && styles.toolbarFocused].filter(Boolean).join(' ')}
         onKeyDown={onToolbarKeyDown}
       >
         {TOOLS.map((tool, i) => {
@@ -375,13 +506,7 @@ export function RichEditor({ initialHtml, label, onInput, onFiles, t, handleRef 
               onFocus={() => setFocusIndex(i)}
               onClick={() => runTool(tool)}
             >
-              {tool.icon ? (
-                <Icon name={tool.icon} size={18} />
-              ) : (
-                <span className={styles.clearMark} aria-hidden="true">
-                  T<sub>x</sub>
-                </span>
-              )}
+              {tool.icon ? <Icon name={tool.icon} size={18} /> : <ClearFormatIcon />}
             </button>
           );
         })}
@@ -394,11 +519,39 @@ export function RichEditor({ initialHtml, label, onInput, onFiles, t, handleRef 
         role="textbox"
         aria-multiline="true"
         aria-label={label}
+        aria-placeholder={placeholder}
         spellCheck
         onInput={changed}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
+        onPointerDown={() => {
+          pointerDown.current = true;
+          pointerEntry.current = document.activeElement !== editorRef.current;
+        }}
+        onClick={(e) => {
+          const entering = pointerEntry.current;
+          pointerEntry.current = false;
+          pointerDown.current = false;
+          const sel = document.getSelection();
+          if (sel && sel.rangeCount && !sel.isCollapsed) return; // the user selected text
+          // Clicking the empty area below the content, or entering the body by clicking
+          // signature / quote: start in the user's own text instead.
+          if (e.target === e.currentTarget || (entering && !selectionInOwnArea())) placeCaretInOwnArea();
+        }}
+        onFocus={() => {
+          setFocused(true);
+          if (programmaticFocus.current || pointerDown.current) return;
+          // Keyboard focus (Tab): the browser may restore an old caret; move it to the own text.
+          window.requestAnimationFrame(() => {
+            if (document.activeElement !== editorRef.current) return;
+            const sel = document.getSelection();
+            if (sel && sel.rangeCount && !sel.isCollapsed) return; // keep a deliberate selection
+            if (!selectionInOwnArea()) placeCaretInOwnArea();
+          });
+        }}
         onBlur={() => {
+          setFocused(false);
+          pointerDown.current = false;
           const sel = document.getSelection();
           if (sel && sel.rangeCount && insideEditor(sel.anchorNode)) lastRange.current = sel.getRangeAt(0).cloneRange();
         }}
