@@ -65,7 +65,7 @@
   max-width: 1120px;
   width: 100%;
   margin: 0 auto;
-  padding: var(--space-5);
+  padding: var(--space-5) var(--space-5) 96px;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   gap: var(--space-6);
@@ -321,7 +321,7 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 240px;
 }
 
 .templateName {
@@ -396,26 +396,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-}
-
-.passwordFieldWrap {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.passwordToggle {
-  align-self: flex-end;
-  min-height: 28px;
-  padding: 2px var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--color-accent-text);
-  font-weight: var(--font-weight-medium);
-  border-radius: var(--radius-sm);
-}
-
-.passwordToggle:hover {
-  background: var(--color-surface-hover);
 }
 
 .strengthBox {
@@ -513,7 +493,7 @@
 
   .layout {
     grid-template-columns: 1fr;
-    padding: var(--space-3);
+    padding: var(--space-3) var(--space-3) 96px;
     gap: var(--space-4);
   }
 
@@ -542,8 +522,41 @@
   }
 
   .backLink,
-  .passwordToggle,
   .demoAdminLink {
     min-height: 44px;
+  }
+}
+
+@media (max-width: 520px) {
+  .navList {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .navList::-webkit-scrollbar {
+    display: none;
+  }
+
+  .navBtn {
+    white-space: nowrap;
+  }
+
+  .templateItem {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .templateInfo {
+    flex: none;
+    width: 100%;
+  }
+
+  .templateActions {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
   }
 }

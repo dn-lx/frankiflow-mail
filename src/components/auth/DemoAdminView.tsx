@@ -19,6 +19,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { mapAuthError } from './LoginView';
+import { PasswordField } from './PasswordField';
 import './strings';
 import styles from './DemoAdminView.module.css';
 
@@ -41,7 +42,6 @@ export function DemoAdminView() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState<'member' | 'admin'>('member');
   const [selectedMailboxes, setSelectedMailboxes] = useState<string[]>(['info@frankiflow.de']);
   const [newPersonalMailbox, setNewPersonalMailbox] = useState(true);
@@ -51,7 +51,6 @@ export function DemoAdminView() {
   // Sign-in-as dialog state
   const [signInTarget, setSignInTarget] = useState<DemoUser | null>(null);
   const [signInPassword, setSignInPassword] = useState('');
-  const [showSignInPassword, setShowSignInPassword] = useState(false);
   const [signingInEmail, setSigningInEmail] = useState<string | null>(null);
   const [signInError, setSignInError] = useState<string | null>(null);
 
@@ -345,14 +344,20 @@ export function DemoAdminView() {
                       </div>
                     </div>
                     <div className={styles.userActions}>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        loading={signingInEmail === u.email}
-                        onClick={() => void handleSignInAsClick(u)}
-                      >
-                        {t('demoAdmin.signInAs')}
-                      </Button>
+                      {isCurrent ? (
+                        <span className={styles.currentUserLabel}>
+                          {t('demoAdmin.currentlySignedIn')}
+                        </span>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          loading={signingInEmail === u.email}
+                          onClick={() => void handleSignInAsClick(u)}
+                        >
+                          {t('demoAdmin.signInAs')}
+                        </Button>
+                      )}
                     </div>
                   </li>
                 );
@@ -396,26 +401,17 @@ export function DemoAdminView() {
             </div>
 
             <div className={styles.formGrid}>
-              <div className={styles.passwordGroup}>
-                <TextField
-                  label={t('demoAdmin.passwordLabel')}
-                  type={showPassword ? 'text' : 'password'}
-                  name="password"
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  disabled={creating}
-                />
-                <button
-                  type="button"
-                  className={styles.passwordToggle}
-                  aria-pressed={showPassword}
-                  onClick={() => setShowPassword((prev) => !prev)}
-                >
-                  {t(showPassword ? 'auth.login.hidePassword' : 'auth.login.showPassword')}
-                </button>
-              </div>
+              <PasswordField
+                label={t('demoAdmin.passwordLabel')}
+                name="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={creating}
+                showLabel={t('auth.login.showPassword')}
+                hideLabelText={t('auth.login.hidePassword')}
+              />
 
               <Select
                 label={t('demoAdmin.roleLabel')}
@@ -509,27 +505,18 @@ export function DemoAdminView() {
             </div>
           )}
 
-          <div className={styles.passwordGroup}>
-            <TextField
-              label={t('auth.login.password')}
-              type={showSignInPassword ? 'text' : 'password'}
-              value={signInPassword}
-              onChange={(e) => {
-                setSignInPassword(e.target.value);
-                if (signInError) setSignInError(null);
-              }}
-              autoComplete="current-password"
-              required
-            />
-            <button
-              type="button"
-              className={styles.passwordToggle}
-              aria-pressed={showSignInPassword}
-              onClick={() => setShowSignInPassword((prev) => !prev)}
-            >
-              {t(showSignInPassword ? 'auth.login.hidePassword' : 'auth.login.showPassword')}
-            </button>
-          </div>
+          <PasswordField
+            label={t('auth.login.password')}
+            value={signInPassword}
+            onChange={(e) => {
+              setSignInPassword(e.target.value);
+              if (signInError) setSignInError(null);
+            }}
+            autoComplete="current-password"
+            required
+            showLabel={t('auth.login.showPassword')}
+            hideLabelText={t('auth.login.hidePassword')}
+          />
 
           <div className={styles.dialogFooterBtns}>
             <Button type="button" variant="secondary" onClick={() => setSignInTarget(null)}>

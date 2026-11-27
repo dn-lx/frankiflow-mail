@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type MouseEv
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Mailbox, Settings, Signature, Template } from '@/lib/backend/types';
-import { describeError } from '@/lib/i18n';
+import { describeError, translate } from '@/lib/i18n';
 import { useApp } from '@/components/providers/AppProvider';
 import {
   Badge,
@@ -17,6 +17,7 @@ import {
   TextField,
   useToast,
 } from '@/components/ui';
+import { PasswordField } from '@/components/auth/PasswordField';
 import { RichEditor } from './RichEditor';
 import { escapeHtml, evaluatePasswordStrength, sanitizeEditorHtml } from './sanitize';
 import './strings';
@@ -102,8 +103,6 @@ export function SettingsView() {
   // Password change state
   const [newPassword, setNewPassword] = useState('');
   const [repeatPassword, setRepeatPassword] = useState('');
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showRepeatPassword, setShowRepeatPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [savingPassword, setSavingPassword] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -184,11 +183,12 @@ export function SettingsView() {
   };
 
   const handleImmediateSetting = async (patch: Partial<Settings>) => {
+    const nextLang = patch.language ?? lang;
     try {
       await setSettings(patch);
-      toast({ message: t('settings.savedToast'), tone: 'success' });
+      toast({ message: translate(nextLang, 'settings.savedToast'), tone: 'success' });
     } catch {
-      toast({ message: t('common.error'), tone: 'error' });
+      toast({ message: translate(lang, 'common.error'), tone: 'error' });
     }
   };
 
@@ -863,49 +863,31 @@ export function SettingsView() {
               )}
 
               <div className={styles.fieldsGrid}>
-                <div className={styles.passwordFieldWrap}>
-                  <TextField
-                    label={t('settings.account.newPassword')}
-                    type={showNewPassword ? 'text' : 'password'}
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(e) => {
-                      setNewPassword(e.target.value);
-                      if (passwordError) setPasswordError(null);
-                    }}
-                    disabled={savingPassword}
-                  />
-                  <button
-                    type="button"
-                    className={styles.passwordToggle}
-                    aria-pressed={showNewPassword}
-                    onClick={() => setShowNewPassword((prev) => !prev)}
-                  >
-                    {t(showNewPassword ? 'auth.login.hidePassword' : 'auth.login.showPassword')}
-                  </button>
-                </div>
+                <PasswordField
+                  label={t('settings.account.newPassword')}
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => {
+                    setNewPassword(e.target.value);
+                    if (passwordError) setPasswordError(null);
+                  }}
+                  disabled={savingPassword}
+                  showLabel={t('settings.account.showPassword')}
+                  hideLabelText={t('settings.account.hidePassword')}
+                />
 
-                <div className={styles.passwordFieldWrap}>
-                  <TextField
-                    label={t('settings.account.repeatPassword')}
-                    type={showRepeatPassword ? 'text' : 'password'}
-                    autoComplete="new-password"
-                    value={repeatPassword}
-                    onChange={(e) => {
-                      setRepeatPassword(e.target.value);
-                      if (passwordError) setPasswordError(null);
-                    }}
-                    disabled={savingPassword}
-                  />
-                  <button
-                    type="button"
-                    className={styles.passwordToggle}
-                    aria-pressed={showRepeatPassword}
-                    onClick={() => setShowRepeatPassword((prev) => !prev)}
-                  >
-                    {t(showRepeatPassword ? 'auth.login.hidePassword' : 'auth.login.showPassword')}
-                  </button>
-                </div>
+                <PasswordField
+                  label={t('settings.account.repeatPassword')}
+                  autoComplete="new-password"
+                  value={repeatPassword}
+                  onChange={(e) => {
+                    setRepeatPassword(e.target.value);
+                    if (passwordError) setPasswordError(null);
+                  }}
+                  disabled={savingPassword}
+                  showLabel={t('settings.account.showPassword')}
+                  hideLabelText={t('settings.account.hidePassword')}
+                />
               </div>
 
               {newPassword.length > 0 && (

@@ -8,12 +8,10 @@
   background: var(--color-bg);
 }
 
-.topBar {
-  width: 100%;
-  max-width: 440px;
+.cardTop {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: var(--space-3);
+  margin-bottom: calc(-1 * var(--space-2));
 }
 
 .langSwitch {
@@ -26,10 +24,10 @@
 }
 
 .langBtn {
-  min-width: 44px;
-  min-height: 36px;
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--font-size-sm);
+  min-width: 36px;
+  min-height: 28px;
+  padding: 2px var(--space-2);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-secondary);
   background: transparent;
@@ -127,31 +125,6 @@
   gap: var(--space-4);
 }
 
-.passwordGroup {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.passwordField {
-  width: 100%;
-}
-
-.passwordToggle {
-  align-self: flex-end;
-  min-height: 32px;
-  padding: var(--space-1) var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--color-accent-text);
-  font-weight: var(--font-weight-medium);
-  border-radius: var(--radius-sm);
-}
-
-.passwordToggle:hover:not(:disabled) {
-  background: var(--color-surface-hover);
-  color: var(--color-accent-hover);
-}
-
 .capsHint {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
@@ -220,12 +193,42 @@
 }
 
 @media (max-width: 480px) {
-  .card {
-    padding: var(--space-4);
+  .page {
+    justify-content: flex-start;
+    padding: var(--space-3);
   }
 
-  .langBtn,
-  .passwordToggle,
+  .card {
+    padding: 20px;
+    gap: var(--space-3);
+  }
+
+  .cardTop {
+    margin-bottom: calc(-1 * var(--space-2));
+  }
+
+  .header {
+    gap: var(--space-1);
+  }
+
+  .logo {
+    width: 48px;
+    height: 48px;
+  }
+
+  .demoBanner {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .form {
+    gap: var(--space-3);
+  }
+
+  .langBtn {
+    min-width: 38px;
+    min-height: 32px;
+  }
+
   .demoLink,
   .liveLinkBtn {
     min-height: 44px;

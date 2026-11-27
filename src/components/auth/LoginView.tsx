@@ -5,8 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { setMode } from '@/lib/backend';
 import { useApp } from '@/components/providers/AppProvider';
-import { Badge, Button, TextField, useToast } from '@/components/ui';
+import { Badge, Button, TextField } from '@/components/ui';
 import { mapAuthError } from './helpers';
+import { PasswordField } from './PasswordField';
 import './strings';
 import styles from './LoginView.module.css';
 
@@ -14,13 +15,11 @@ export { mapAuthError };
 
 export function LoginView() {
   const { backend, mode, t, lang, setSettings, refreshSession, online } = useApp();
-  const toast = useToast();
   const router = useRouter();
 
   // Audit L10: never prefill a remembered email address.
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -53,7 +52,6 @@ export function LoginView() {
       if (!res.ok) {
         const msg = mapAuthError(res.error, online, t);
         setErrorMsg(msg);
-        toast({ message: msg, tone: 'error' });
         return;
       }
       await refreshSession();
@@ -62,7 +60,6 @@ export function LoginView() {
       const code = err instanceof Error ? err.message : String(err);
       const msg = mapAuthError(code, online, t);
       setErrorMsg(msg);
-      toast({ message: msg, tone: 'error' });
     } finally {
       setSubmitting(false);
     }
@@ -70,28 +67,28 @@ export function LoginView() {
 
   return (
     <main className={styles.page}>
-      <div className={styles.topBar}>
-        <div className={styles.langSwitch} role="group" aria-label={t('auth.lang.label')}>
-          <button
-            type="button"
-            className={[styles.langBtn, lang === 'de' && styles.langBtnActive].filter(Boolean).join(' ')}
-            aria-pressed={lang === 'de'}
-            onClick={() => void setSettings({ language: 'de' })}
-          >
-            {t('auth.lang.de')}
-          </button>
-          <button
-            type="button"
-            className={[styles.langBtn, lang === 'en' && styles.langBtnActive].filter(Boolean).join(' ')}
-            aria-pressed={lang === 'en'}
-            onClick={() => void setSettings({ language: 'en' })}
-          >
-            {t('auth.lang.en')}
-          </button>
-        </div>
-      </div>
-
       <section className={styles.card} aria-labelledby="login-heading">
+        <div className={styles.cardTop}>
+          <div className={styles.langSwitch} role="group" aria-label={t('auth.lang.label')}>
+            <button
+              type="button"
+              className={[styles.langBtn, lang === 'de' && styles.langBtnActive].filter(Boolean).join(' ')}
+              aria-pressed={lang === 'de'}
+              onClick={() => void setSettings({ language: 'de' })}
+            >
+              {t('auth.lang.de')}
+            </button>
+            <button
+              type="button"
+              className={[styles.langBtn, lang === 'en' && styles.langBtnActive].filter(Boolean).join(' ')}
+              aria-pressed={lang === 'en'}
+              onClick={() => void setSettings({ language: 'en' })}
+            >
+              {t('auth.lang.en')}
+            </button>
+          </div>
+        </div>
+
         <header className={styles.header}>
           <img
             src="/icon.svg"
@@ -149,34 +146,22 @@ export function LoginView() {
             disabled={submitting}
           />
 
-          <div className={styles.passwordGroup}>
-            <TextField
-              label={t('auth.login.password')}
-              type={showPassword ? 'text' : 'password'}
-              name="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                if (errorMsg) setErrorMsg(null);
-              }}
-              onKeyDown={handleCapsCheck}
-              onKeyUp={handleCapsCheck}
-              required
-              disabled={submitting}
-              className={styles.passwordField}
-            />
-            <button
-              type="button"
-              className={styles.passwordToggle}
-              aria-pressed={showPassword}
-              aria-label={t(showPassword ? 'auth.login.hidePassword' : 'auth.login.showPassword')}
-              onClick={() => setShowPassword((prev) => !prev)}
-              disabled={submitting}
-            >
-              {t(showPassword ? 'auth.login.hidePassword' : 'auth.login.showPassword')}
-            </button>
-          </div>
+          <PasswordField
+            label={t('auth.login.password')}
+            name="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (errorMsg) setErrorMsg(null);
+            }}
+            onKeyDown={handleCapsCheck}
+            onKeyUp={handleCapsCheck}
+            required
+            disabled={submitting}
+            showLabel={t('auth.login.showPassword')}
+            hideLabelText={t('auth.login.hidePassword')}
+          />
 
           {capsLock && (
             <p className={styles.capsHint} role="status">
