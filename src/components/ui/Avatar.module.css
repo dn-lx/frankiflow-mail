@@ -1,0 +1,45 @@
+.avatar {
+  --avatar-hue: 180;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 50%;
+  /* Soft pastel with dark text: contrast > 7:1 for any hue. */
+  background: hsl(var(--avatar-hue) 45% 88%);
+  color: hsl(var(--avatar-hue) 50% 22%);
+  font-weight: var(--font-weight-bold);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+:global(:root[data-theme="dark"]) .avatar {
+  background: hsl(var(--avatar-hue) 28% 28%);
+  color: hsl(var(--avatar-hue) 60% 90%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root[data-theme="system"]) .avatar {
+    background: hsl(var(--avatar-hue) 28% 28%);
+    color: hsl(var(--avatar-hue) 60% 90%);
+  }
+}
+
+.sm {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+.md {
+  width: 36px;
+  height: 36px;
+  font-size: var(--font-size-sm);
+}
+
+.lg {
+  width: 48px;
+  height: 48px;
+  font-size: var(--font-size-md);
+}
