@@ -39,8 +39,9 @@ function isPdfAttachment(a: AttachmentMeta): boolean {
 
 /** A `data:` URL must itself declare `application/pdf` before it may be opened. */
 function canOpenAsPdf(url: string): boolean {
-  if (/^data:/i.test(url)) return /^data:application\/pdf[;,]/i.test(url.trim());
-  return true;
+  const u = url.trim();
+  if (/^data:/i.test(u)) return /^data:application\/pdf[;,]/i.test(u);
+  return /^(blob:|https:)/i.test(u);
 }
 
 function triggerDownload(url: string, filename: string): void {

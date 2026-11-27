@@ -268,7 +268,23 @@ function rewriteCss(css: string, allowRemoteImages: boolean): { css: string; blo
     CSS_FETCH_FN_RE.lastIndex = end;
   }
   out += text.slice(pos);
+  if (!allowRemoteImages && !isStrictlyLocalCss(out)) {
+    // Fail closed: the tokenizer above is best effort. If anything that could still fetch
+    // survives (odd quoting, unterminated strings, escapes), drop the whole stylesheet or
+    // style attribute rather than risk a remote request. The frame CSP blocks it as well.
+    return { css: '', blockedCount: Math.max(blockedCount, 1) };
+  }
   return { css: out, blockedCount };
+}
+
+/** Strictly well-formed inline image URLs. Anything else in CSS that can fetch counts as remote. */
+const SAFE_DATA_URL_RE =
+  /url\(\s*(?:"data:image\/[a-z0-9.+-]+(?:;[a-z0-9=._+-]+)*,[a-z0-9+/=%._~-]*"|'data:image\/[a-z0-9.+-]+(?:;[a-z0-9=._+-]+)*,[a-z0-9+/=%._~-]*'|data:image\/[a-z0-9.+-]+(?:;[a-z0-9=._+-]+)*,[a-z0-9+/=%._~-]*)\s*\)/gi;
+const CSS_FETCH_HINT_RE = /url\s*\(|image-set|image\s*\(|cross-fade|@import|src\s*\(|expression\s*\(|\\/i;
+
+function isStrictlyLocalCss(css: string): boolean {
+  const rest = css.split(`url("${PLACEHOLDER_IMG}")`).join('').replace(SAFE_DATA_URL_RE, '');
+  return !CSS_FETCH_HINT_RE.test(rest);
 }
 
 // ---------------------------------------------------------------------------

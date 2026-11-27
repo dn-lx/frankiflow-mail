@@ -220,3 +220,22 @@ describe('sanitizeEmailHtml: edge cases', () => {
     assert.equal(res.blockedImages, 0);
   });
 });
+
+describe('second-review CSS bypasses (fail closed)', () => {
+  const inputs: [string, string][] = [
+    ['quote inside unquoted data url', `<style>p{background:url(data:image/png;base64,a");background-image:url(https://tracker.example/p.gif)}</style><p>x</p>`],
+    ['newline inside quoted data url', `<style>p{background:url("data:image/png;base64,a\n);background-image:url(https://tracker.example/p.gif)}</style><p>x</p>`],
+    ['opposite quote inside image-set string', `<div style="background-image:image-set(&quot;https://tracker.example/p.gif?'&quot; 1x)">x</div>`],
+    ['quoted url inside image-set', `<div style="background-image:image-set(url(&quot;https://tracker.example/p.gif&quot;) 1x)">x</div>`],
+  ];
+  for (const [name, html] of inputs) {
+    it(`blocks: ${name}`, () => {
+      const out = clean(html).html;
+      assert.ok(!out.includes('tracker.example'), `${name}: remote host survived: ${out}`);
+    });
+  }
+  it('keeps a well-formed inline data image in CSS', () => {
+    const out = clean(`<div style="background:url('data:image/png;base64,iVBORw0KGgo=')">x</div>`).html;
+    assert.ok(out.includes('data:image/png;base64,iVBORw0KGgo='), out);
+  });
+});
