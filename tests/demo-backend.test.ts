@@ -213,6 +213,31 @@ describe('threads and counts', () => {
     assert.equal(after.inbox, (before.inbox ?? 0) - 1);
     assert.equal(after.starred, (before.starred ?? 0) - 1);
   });
+
+  it('a thread with an inbound message in inbox and our reply in sent shows messageCount 2 in both', async () => {
+    const backend = await signedInBackend();
+    const info = (await backend.listMailboxes()).find((mb) => mb.id === INFO);
+    assert.ok(info);
+
+    // Sending to our own address yields an inbound copy in the info inbox
+    // and the outbound message in sent, both in one thread.
+    const result = await backend.send(
+      makeDraft({ to: [info.address], subject: 'Konversation Zählung' })
+    );
+    assert.equal(result.ok, true);
+
+    const inboxThread = (await listAll(backend, 'inbox', INFO)).find(
+      (t) => t.subject === 'Konversation Zählung'
+    );
+    const sentThread = (await listAll(backend, 'sent', INFO)).find(
+      (t) => t.latestMessageId === result.messageId
+    );
+    assert.ok(inboxThread, 'thread missing from inbox');
+    assert.ok(sentThread, 'thread missing from sent');
+    assert.equal(inboxThread.id, sentThread.id);
+    assert.equal(inboxThread.messageCount, 2);
+    assert.equal(sentThread.messageCount, 2);
+  });
 });
 
 describe('message updates', () => {
