@@ -15,23 +15,33 @@ function safeStorage(): Storage | null {
 }
 
 /**
- * Demo when the URL has `?demo=1` (remembered in localStorage so it survives
- * navigation), or `localStorage['ffmail.mode'] === 'demo'`, or the build sets
- * NEXT_PUBLIC_MAIL_MODE=demo. Otherwise live.
+ * Order: `?demo=1` (remembered in localStorage so it survives navigation),
+ * then a stored `localStorage['ffmail.mode']` ('demo' | 'live'), then the
+ * build's NEXT_PUBLIC_MAIL_MODE=demo. Otherwise live.
  */
 export function currentMode(): Mode {
   const storage = safeStorage();
   if (typeof window !== 'undefined') {
     try {
       if (new URLSearchParams(window.location.search).get('demo') === '1') {
-        storage?.setItem(MODE_KEY, 'demo');
+        try {
+          storage?.setItem(MODE_KEY, 'demo');
+        } catch {
+          /* storage full or blocked; demo still applies for this load */
+        }
         return 'demo';
       }
     } catch {
       /* ignore malformed URLs */
     }
   }
-  if (storage?.getItem(MODE_KEY) === 'demo') return 'demo';
+  let stored: string | null = null;
+  try {
+    stored = storage?.getItem(MODE_KEY) ?? null;
+  } catch {
+    stored = null;
+  }
+  if (stored === 'demo' || stored === 'live') return stored;
   if (process.env.NEXT_PUBLIC_MAIL_MODE === 'demo') return 'demo';
   return 'live';
 }

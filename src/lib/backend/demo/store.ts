@@ -16,6 +16,7 @@ export const STATE_VERSION = 1;
 
 export interface DemoUserRecord extends DemoUser {
   id: string;
+  passwordSalt: string;
   passwordHash: string;
 }
 
@@ -93,15 +94,92 @@ export function generateId(): string {
   });
 }
 
-export async function hashPassword(password: string): Promise<string> {
-  const bytes = new TextEncoder().encode(password);
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
-  const view = new Uint8Array(digest);
-  let hex = '';
-  for (let i = 0; i < view.length; i += 1) {
-    hex += view[i].toString(16).padStart(2, '0');
+function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
   }
-  return hex;
+  return btoa(binary);
+}
+
+function fromBase64(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+const PBKDF2_ITERATIONS = 100_000;
+
+export async function hashPassword(
+  password: string,
+  existingSaltBase64?: string
+): Promise<{ salt: string; hash: string }> {
+  const saltBytes = existingSaltBase64
+    ? fromBase64(existingSaltBase64)
+    : globalThis.crypto.getRandomValues(new Uint8Array(16));
+  const saltCopy = new Uint8Array(saltBytes.length);
+  saltCopy.set(saltBytes);
+
+  const keyMaterial = await globalThis.crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const derived = await globalThis.crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: saltCopy,
+      iterations: PBKDF2_ITERATIONS,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256
+  );
+
+  return {
+    salt: existingSaltBase64 ?? toBase64(saltCopy),
+    hash: toBase64(new Uint8Array(derived)),
+  };
+}
+
+export async function verifyPassword(
+  password: string,
+  salt: string,
+  expectedHash: string
+): Promise<boolean> {
+  if (!salt || !expectedHash) return false;
+  try {
+    const { hash } = await hashPassword(password, salt);
+    if (hash.length !== expectedHash.length) return false;
+    let diff = 0;
+    for (let i = 0; i < hash.length; i += 1) {
+      diff |= hash.charCodeAt(i) ^ expectedHash.charCodeAt(i);
+    }
+    return diff === 0;
+  } catch {
+    return false;
+  }
+}
+
+function isValidUserRecord(u: unknown): u is DemoUserRecord {
+  if (!u || typeof u !== 'object') return false;
+  const rec = u as Partial<DemoUserRecord>;
+  return (
+    typeof rec.id === 'string' &&
+    typeof rec.email === 'string' &&
+    typeof rec.name === 'string' &&
+    (rec.role === 'admin' || rec.role === 'member') &&
+    Array.isArray(rec.mailboxAddresses) &&
+    typeof rec.passwordSalt === 'string' &&
+    rec.passwordSalt.length > 0 &&
+    typeof rec.passwordHash === 'string' &&
+    rec.passwordHash.length > 0
+  );
 }
 
 export function loadState(storage: Storage): DemoState | null {
@@ -114,6 +192,7 @@ export function loadState(storage: Storage): DemoState | null {
       typeof parsed !== 'object' ||
       parsed.version !== STATE_VERSION ||
       !Array.isArray(parsed.users) ||
+      !parsed.users.every(isValidUserRecord) ||
       !Array.isArray(parsed.mailboxes) ||
       !Array.isArray(parsed.messages) ||
       !Array.isArray(parsed.labels)

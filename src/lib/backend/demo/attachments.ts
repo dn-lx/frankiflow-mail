@@ -117,10 +117,40 @@ export function base64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
+const objectUrlCache = new Map<string, string>();
+
+export function revokeAttachmentUrl(attachmentId: string): void {
+  const cached = objectUrlCache.get(attachmentId);
+  if (!cached) return;
+  objectUrlCache.delete(attachmentId);
+  if (
+    typeof globalThis.URL !== 'undefined' &&
+    typeof globalThis.URL.revokeObjectURL === 'function'
+  ) {
+    globalThis.URL.revokeObjectURL(cached);
+  }
+}
+
+export function clearAttachmentUrlCache(): void {
+  for (const id of Array.from(objectUrlCache.keys())) {
+    revokeAttachmentUrl(id);
+  }
+}
+
 export function createAttachmentUrl(
   meta: AttachmentMeta,
   custom?: StoredAttachmentData
 ): string {
+  const isBrowser =
+    typeof globalThis.document !== 'undefined' &&
+    typeof globalThis.URL !== 'undefined' &&
+    typeof globalThis.URL.createObjectURL === 'function';
+
+  if (isBrowser) {
+    const cached = objectUrlCache.get(meta.id);
+    if (cached) return cached;
+  }
+
   let bytes: Uint8Array;
   let contentType = meta.contentType;
 
@@ -144,16 +174,13 @@ export function createAttachmentUrl(
     bytes = new TextEncoder().encode(`Demo attachment: ${meta.filename}`);
   }
 
-  const isBrowser =
-    typeof globalThis.document !== 'undefined' &&
-    typeof globalThis.URL !== 'undefined' &&
-    typeof globalThis.URL.createObjectURL === 'function';
-
   if (isBrowser) {
     const copy = new Uint8Array(bytes.length);
     copy.set(bytes);
     const blob = new Blob([copy], { type: contentType });
-    return globalThis.URL.createObjectURL(blob);
+    const url = globalThis.URL.createObjectURL(blob);
+    objectUrlCache.set(meta.id, url);
+    return url;
   }
 
   return `data:${contentType};base64,${bytesToBase64(bytes)}`;

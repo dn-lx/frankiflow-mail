@@ -107,6 +107,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [retrying, setRetrying] = useState(false);
   const [settings, setSettingsState] = useState<Settings>(DEFAULT_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [uiHydrated, setUiHydrated] = useState(false);
   const [online, setOnline] = useState(true);
 
   const settingsRef = useRef(settings);
@@ -134,6 +135,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const ui = readUi();
     if (Object.keys(ui).length) setSettingsState((s) => ({ ...s, ...ui }));
+    setUiHydrated(true);
     setModeState(currentMode());
     setOnline(navigator.onLine);
     void load();
@@ -177,13 +179,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [backend, userId]);
 
-  // Apply theme, density and language to <html>.
+  // Apply theme, density and language to <html>. Skipped until the stored UI
+  // prefs are applied, so DEFAULT_SETTINGS never override the boot script (theme flash).
   useEffect(() => {
+    if (!uiHydrated) return;
     const root = document.documentElement;
     root.dataset.theme = settings.theme;
     root.dataset.density = settings.density;
     root.lang = settings.language;
-  }, [settings.theme, settings.density, settings.language]);
+  }, [uiHydrated, settings.theme, settings.density, settings.language]);
 
   const setSettings = useCallback(
     async (patch: Partial<Settings>) => {

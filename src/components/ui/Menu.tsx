@@ -71,7 +71,9 @@ export function Menu({
   useEffect(() => {
     if (!open) return;
     const els = itemEls();
-    (focusOnOpen.current === 'last' ? els[els.length - 1] : els[0])?.focus();
+    const target = focusOnOpen.current === 'last' ? els[els.length - 1] : els[0];
+    // No enabled items: focus the menu itself so Escape/Tab still work.
+    (target ?? menuRef.current)?.focus();
     const onPointerDown = (e: PointerEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) close(false);
     };

@@ -44,19 +44,12 @@ export function Dialog({
 
   useEffect(() => {
     const dialog = ref.current;
-    if (!dialog) return;
-    if (open && !dialog.open) {
-      returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      dialog.showModal();
-    } else if (!open && dialog.open) {
-      dialog.close();
-    }
-  }, [open]);
-
-  // Restore focus when closing or unmounting while open.
-  useEffect(() => {
-    if (!open) return;
+    if (!dialog || !open) return;
+    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!dialog.open) dialog.showModal();
+    // On close or unmount while open: close first (removes inert), then restore focus.
     return () => {
+      if (dialog.open) dialog.close();
       const el = returnFocus.current;
       returnFocus.current = null;
       if (el && el.isConnected) el.focus();

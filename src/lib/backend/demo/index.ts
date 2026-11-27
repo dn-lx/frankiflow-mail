@@ -19,7 +19,12 @@ import type {
   ThreadSummary,
   UserSession,
 } from '../types.ts';
-import { bytesToBase64, createAttachmentUrl } from './attachments.ts';
+import {
+  bytesToBase64,
+  clearAttachmentUrlCache,
+  createAttachmentUrl,
+  revokeAttachmentUrl,
+} from './attachments.ts';
 import { matchesSearch, parseSearch } from './search.ts';
 import { createSeedState } from './seed.ts';
 import {
@@ -31,11 +36,20 @@ import {
   resolveStorage,
   saveSession,
   saveState,
+  verifyPassword,
   type DemoState,
   type DemoUserRecord,
 } from './store.ts';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const ALLOWED_MOVE_FOLDERS = new Set<Message['folder']>([
+  'inbox',
+  'archive',
+  'spam',
+  'trash',
+  'snoozed',
+]);
 
 const PRIORITY_RANK: Record<Priority, number> = {
   low: 0,
@@ -45,6 +59,15 @@ const PRIORITY_RANK: Record<Priority, number> = {
 
 function messageTimestamp(m: Message): string {
   return m.sentAt ?? m.receivedAt ?? m.createdAt;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function stripHtml(html: string): string {
@@ -62,6 +85,86 @@ function isOutgoingAttachment(
   return 'data' in att;
 }
 
+type PreparedAttachment =
+  | {
+      kind: 'new';
+      id: string;
+      filename: string;
+      contentType: string;
+      size: number;
+      base64: string;
+    }
+  | {
+      kind: 'existing';
+      meta: AttachmentMeta;
+    };
+
+async function prepareAttachments(
+  items: (OutgoingAttachment | AttachmentMeta)[]
+): Promise<PreparedAttachment[]> {
+  const prepared: PreparedAttachment[] = [];
+  for (const item of items) {
+    if (isOutgoingAttachment(item)) {
+      const buffer = await item.data.arrayBuffer();
+      prepared.push({
+        kind: 'new',
+        id: generateId(),
+        filename: item.filename,
+        contentType: item.contentType || 'application/octet-stream',
+        size: item.size,
+        base64: bytesToBase64(new Uint8Array(buffer)),
+      });
+    } else {
+      prepared.push({ kind: 'existing', meta: item });
+    }
+  }
+  return prepared;
+}
+
+function applyPreparedAttachments(
+  state: DemoState,
+  messageId: string,
+  prepared: PreparedAttachment[]
+): AttachmentMeta[] {
+  return prepared.map((item) => {
+    if (item.kind === 'new') {
+      state.customAttachments[item.id] = {
+        contentType: item.contentType,
+        base64: item.base64,
+      };
+      return {
+        id: item.id,
+        messageId,
+        filename: item.filename,
+        contentType: item.contentType,
+        size: item.size,
+      };
+    }
+    return {
+      ...item.meta,
+      messageId,
+    };
+  });
+}
+
+function pruneUnusedCustomAttachments(
+  state: DemoState,
+  candidateIds: Iterable<string>
+): void {
+  const stillReferenced = new Set<string>();
+  for (const msg of state.messages) {
+    for (const att of msg.attachments) {
+      stillReferenced.add(att.id);
+    }
+  }
+  for (const id of candidateIds) {
+    if (!stillReferenced.has(id)) {
+      delete state.customAttachments[id];
+      revokeAttachmentUrl(id);
+    }
+  }
+}
+
 function highestPriority(messages: Message[]): Priority {
   let best: Priority = 'low';
   for (const m of messages) {
@@ -74,23 +177,22 @@ function highestPriority(messages: Message[]): Priority {
 
 function cloneAttachmentsForCopy(
   attachments: AttachmentMeta[],
-  newMessageId: string,
-  state: DemoState
+  newMessageId: string
 ): AttachmentMeta[] {
-  return attachments.map((att) => {
-    const newAttId = generateId();
-    const existingCustom = state.customAttachments[att.id];
-    if (existingCustom) {
-      state.customAttachments[newAttId] = { ...existingCustom };
-    }
-    return {
-      id: newAttId,
-      messageId: newMessageId,
-      filename: att.filename,
-      contentType: att.contentType,
-      size: att.size,
-    };
-  });
+  return attachments.map((att) => ({
+    ...att,
+    messageId: newMessageId,
+  }));
+}
+
+function compareThreadsDesc(a: ThreadSummary, b: ThreadSummary): number {
+  if (a.lastMessageAt !== b.lastMessageAt) {
+    return a.lastMessageAt > b.lastMessageAt ? -1 : 1;
+  }
+  if (a.id !== b.id) {
+    return a.id > b.id ? -1 : 1;
+  }
+  return 0;
 }
 
 function deliverToLocalMailboxes(
@@ -126,7 +228,7 @@ function deliverToLocalMailboxes(
       isPinned: false,
       priority: outbound.priority,
       hasAttachments: outbound.attachments.length > 0,
-      attachments: cloneAttachmentsForCopy(outbound.attachments, copyId, state),
+      attachments: cloneAttachmentsForCopy(outbound.attachments, copyId),
       labelIds: [],
       receivedAt: nowIso,
       inReplyTo: outbound.inReplyTo,
@@ -143,6 +245,16 @@ export function createDemoBackend(storage?: Storage): MailBackend {
   const skipLatency = storage !== undefined;
   const listeners = new Set<() => void>();
   let schedulerTimer: ReturnType<typeof setInterval> | null = null;
+  let chain: Promise<void> = Promise.resolve();
+
+  function mutate<T>(fn: () => Promise<T>): Promise<T> {
+    const next = chain.then(fn, fn);
+    chain = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  }
 
   async function maybeDelay(): Promise<void> {
     if (skipLatency) return;
@@ -190,7 +302,7 @@ export function createDemoBackend(storage?: Storage): MailBackend {
     return changed;
   }
 
-  async function ensureState(): Promise<DemoState> {
+  async function ensureStateUnlocked(): Promise<DemoState> {
     let state = loadState(store);
     if (!state) {
       state = await createSeedState();
@@ -201,6 +313,10 @@ export function createDemoBackend(storage?: Storage): MailBackend {
       notify();
     }
     return state;
+  }
+
+  function ensureState(): Promise<DemoState> {
+    return mutate(() => ensureStateUnlocked());
   }
 
   function requireUser(state: DemoState): {
@@ -245,7 +361,7 @@ export function createDemoBackend(storage?: Storage): MailBackend {
         .map((mb) => ({
           id: generateId(),
           mailboxId: mb.id,
-          html: `<p>Mit freundlichen Grüßen<br><strong>${mb.displayName}</strong><br>${mb.address}</p>`,
+          html: `<p>Mit freundlichen Grüßen<br><strong>${escapeHtml(mb.displayName)}</strong><br>${escapeHtml(mb.address)}</p>`,
           isDefault: true,
         }));
     }
@@ -261,40 +377,11 @@ export function createDemoBackend(storage?: Storage): MailBackend {
     }
   }
 
-  async function persistDraftAttachments(
-    state: DemoState,
-    messageId: string,
-    items: (OutgoingAttachment | AttachmentMeta)[]
-  ): Promise<AttachmentMeta[]> {
-    const metas: AttachmentMeta[] = [];
-    for (const item of items) {
-      if (isOutgoingAttachment(item)) {
-        const id = generateId();
-        const buffer = await item.data.arrayBuffer();
-        state.customAttachments[id] = {
-          contentType: item.contentType || 'application/octet-stream',
-          base64: bytesToBase64(new Uint8Array(buffer)),
-        };
-        metas.push({
-          id,
-          messageId,
-          filename: item.filename,
-          contentType: item.contentType || 'application/octet-stream',
-          size: item.size,
-        });
-      } else {
-        metas.push({
-          ...item,
-          messageId,
-        });
-      }
-    }
-    return metas;
-  }
-
   function messageMatchesFolder(m: Message, folder: Folder): boolean {
     if (folder === 'starred') return m.isStarred;
-    if (folder === 'all') return m.folder !== 'spam' && m.folder !== 'trash';
+    if (folder === 'all') {
+      return m.folder !== 'spam' && m.folder !== 'trash' && m.folder !== 'drafts';
+    }
     return m.folder === folder;
   }
 
@@ -319,54 +406,76 @@ export function createDemoBackend(storage?: Storage): MailBackend {
       password: string
     ): Promise<{ ok: boolean; error?: string }> {
       await maybeDelay();
-      const state = await ensureState();
-      const normalized = email.trim().toLowerCase();
-      const user = state.users.find(
-        (u) => u.email.toLowerCase() === normalized
-      );
-      if (!user) {
-        throw new Error('auth:invalid');
-      }
-      const hash = await hashPassword(password);
-      if (hash !== user.passwordHash) {
-        throw new Error('auth:invalid');
-      }
-      const session: UserSession = {
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-        mode: 'demo',
-      };
-      saveSession(store, session);
-      notify();
-      return { ok: true };
+      return mutate(async () => {
+        const state = await ensureStateUnlocked();
+        const normalized = email.trim().toLowerCase();
+        const user = state.users.find(
+          (u) => u.email.toLowerCase() === normalized
+        );
+        if (!user) {
+          return { ok: false, error: 'auth:invalid' };
+        }
+        const ok = await verifyPassword(
+          password,
+          user.passwordSalt,
+          user.passwordHash
+        );
+        if (!ok) {
+          return { ok: false, error: 'auth:invalid' };
+        }
+        const session: UserSession = {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          mode: 'demo',
+        };
+        saveSession(store, session);
+        notify();
+        return { ok: true };
+      });
     },
 
     async signOut(): Promise<void> {
       await maybeDelay();
-      saveSession(store, null);
-      notify();
+      return mutate(async () => {
+        saveSession(store, null);
+        notify();
+      });
     },
 
     async changePassword(
       newPassword: string
     ): Promise<{ ok: boolean; error?: string }> {
       await maybeDelay();
-      const state = await ensureState();
-      const { user } = requireUser(state);
-      if (newPassword.length < 8) {
-        throw new Error('auth:invalid');
-      }
-      user.passwordHash = await hashPassword(newPassword);
-      saveState(store, state);
-      return { ok: true };
+      return mutate(async () => {
+        if (!newPassword || newPassword.length < 8) {
+          const preSession = loadSession(store);
+          if (!preSession) {
+            return { ok: false, error: 'auth:required' };
+          }
+          return { ok: false, error: 'auth:weak-password' };
+        }
+        const { salt, hash } = await hashPassword(newPassword);
+        const state = await ensureStateUnlocked();
+        const session = loadSession(store);
+        const user = session
+          ? state.users.find((u) => u.id === session.userId)
+          : undefined;
+        if (!session || !user) {
+          return { ok: false, error: 'auth:required' };
+        }
+        user.passwordSalt = salt;
+        user.passwordHash = hash;
+        saveState(store, state);
+        return { ok: true };
+      });
     },
 
     onChange(listener: () => void): () => void {
       listeners.add(listener);
       if (listeners.size === 1 && schedulerTimer === null) {
         schedulerTimer = setInterval(() => {
-          void ensureState();
+          mutate(() => ensureStateUnlocked()).catch(() => {});
         }, 30_000);
         if (
           typeof schedulerTimer === 'object' &&
@@ -431,20 +540,25 @@ export function createDemoBackend(storage?: Storage): MailBackend {
       const summaries: ThreadSummary[] = [];
 
       for (const [threadId, msgs] of byThread.entries()) {
-        if (!msgs.some((m) => messageMatchesFolder(m, q.folder))) continue;
-        if (q.labelId && !msgs.some((m) => m.labelIds.includes(q.labelId!))) {
+        const folderMsgs = msgs.filter((m) => messageMatchesFolder(m, q.folder));
+        if (folderMsgs.length === 0) continue;
+        if (q.labelId && !folderMsgs.some((m) => m.labelIds.includes(q.labelId!))) {
           continue;
         }
         if (
           parsedSearch &&
-          !msgs.some((m) => matchesSearch(m, parsedSearch, labelsByName))
+          !folderMsgs.some((m) => matchesSearch(m, parsedSearch, labelsByName))
         ) {
           continue;
         }
 
-        const sorted = [...msgs].sort((a, b) =>
-          messageTimestamp(a).localeCompare(messageTimestamp(b))
-        );
+        const sorted = [...folderMsgs].sort((a, b) => {
+          const tsA = messageTimestamp(a);
+          const tsB = messageTimestamp(b);
+          if (tsA !== tsB) return tsA < tsB ? -1 : 1;
+          if (a.id !== b.id) return a.id < b.id ? -1 : 1;
+          return 0;
+        });
         const latest = sorted[sorted.length - 1];
 
         const participantSet = new Set<string>();
@@ -479,21 +593,42 @@ export function createDemoBackend(storage?: Storage): MailBackend {
         });
       }
 
-      summaries.sort((a, b) => {
-        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-        return b.lastMessageAt.localeCompare(a.lastMessageAt);
-      });
-
-      const filtered = q.before
-        ? summaries.filter((t) => t.lastMessageAt < q.before!)
-        : summaries;
+      const pinned = summaries.filter((t) => t.isPinned).sort(compareThreadsDesc);
+      const unpinned = summaries
+        .filter((t) => !t.isPinned)
+        .sort(compareThreadsDesc);
 
       const limit = q.limit ?? 50;
-      const page = filtered.slice(0, limit);
-      const nextBefore =
-        filtered.length > limit && page.length > 0
-          ? page[page.length - 1].lastMessageAt
-          : undefined;
+      let page: ThreadSummary[];
+      let hasMore: boolean;
+      let cursorSource: ThreadSummary | undefined;
+
+      if (!q.before) {
+        const unpinnedLimit = Math.max(0, limit - pinned.length);
+        const unpinnedPage = unpinned.slice(0, unpinnedLimit);
+        page = [...pinned.slice(0, limit), ...unpinnedPage];
+        hasMore = unpinned.length > unpinnedLimit;
+        cursorSource = unpinnedPage[unpinnedPage.length - 1];
+      } else {
+        const sepIdx = q.before.indexOf('|');
+        const beforeIso = sepIdx >= 0 ? q.before.slice(0, sepIdx) : q.before;
+        const beforeId = sepIdx >= 0 ? q.before.slice(sepIdx + 1) : '';
+        const filtered = unpinned.filter((t) => {
+          if (t.lastMessageAt !== beforeIso) {
+            return t.lastMessageAt < beforeIso;
+          }
+          return sepIdx >= 0 ? t.id < beforeId : false;
+        });
+        page = filtered.slice(0, limit);
+        hasMore = filtered.length > limit;
+        cursorSource = page[page.length - 1];
+      }
+
+      const nextBefore = hasMore
+        ? cursorSource
+          ? `${cursorSource.lastMessageAt}|${cursorSource.id}`
+          : '~|'
+        : undefined;
 
       return { threads: page, nextBefore };
     },
@@ -504,14 +639,11 @@ export function createDemoBackend(storage?: Storage): MailBackend {
       const { user } = requireUser(state);
       const visibleIds = getVisibleMailboxIds(state, user);
 
-      const allInThread = state.messages.filter((m) => m.threadId === threadId);
-      if (allInThread.length === 0) {
-        throw new Error('not-found');
-      }
-
-      const visible = allInThread.filter((m) => visibleIds.has(m.mailboxId));
+      const visible = state.messages.filter(
+        (m) => m.threadId === threadId && visibleIds.has(m.mailboxId)
+      );
       if (visible.length === 0) {
-        throw new Error('permission:denied');
+        throw new Error('not-found');
       }
 
       return [...visible]
@@ -532,72 +664,114 @@ export function createDemoBackend(storage?: Storage): MailBackend {
       patch: MessagePatch
     ): Promise<void> {
       await maybeDelay();
-      const state = await ensureState();
-      const { user } = requireUser(state);
-      const visibleIds = getVisibleMailboxIds(state, user);
+      return mutate(async () => {
+        const state = await ensureStateUnlocked();
+        const { user } = requireUser(state);
+        const visibleIds = getVisibleMailboxIds(state, user);
 
-      const targets: Message[] = [];
-      for (const id of messageIds) {
-        const msg = state.messages.find((m) => m.id === id);
-        if (!msg) throw new Error('not-found');
-        if (!visibleIds.has(msg.mailboxId)) {
-          throw new Error('permission:denied');
+        const targets: Message[] = [];
+        for (const id of messageIds) {
+          const msg = state.messages.find((m) => m.id === id);
+          if (!msg || !visibleIds.has(msg.mailboxId)) {
+            throw new Error('not-found');
+          }
+          targets.push(msg);
         }
-        targets.push(msg);
-      }
 
-      const nowIso = new Date().toISOString();
-      for (const msg of targets) {
-        if (patch.isRead !== undefined) msg.isRead = patch.isRead;
-        if (patch.isStarred !== undefined) msg.isStarred = patch.isStarred;
-        if (patch.isPinned !== undefined) msg.isPinned = patch.isPinned;
-        if (patch.priority !== undefined) msg.priority = patch.priority;
-        if (patch.folder !== undefined) msg.folder = patch.folder;
-        if (patch.snoozedUntil !== undefined) {
-          if (patch.snoozedUntil === null) {
-            delete msg.snoozedUntil;
-          } else {
-            msg.snoozedUntil = patch.snoozedUntil;
+        if (patch.folder !== undefined) {
+          if (patch.folder === 'drafts') {
+            if (targets.some((m) => m.direction !== 'draft')) {
+              throw new Error('invalid:folder');
+            }
+          } else if (!ALLOWED_MOVE_FOLDERS.has(patch.folder)) {
+            throw new Error('invalid:folder');
+          }
+
+          if (patch.folder === 'snoozed') {
+            if (
+              typeof patch.snoozedUntil !== 'string' ||
+              patch.snoozedUntil.trim().length === 0 ||
+              Number.isNaN(Date.parse(patch.snoozedUntil))
+            ) {
+              throw new Error('invalid:snoozed-until');
+            }
           }
         }
-        if (patch.labelIdsAdd && patch.labelIdsAdd.length > 0) {
-          const set = new Set(msg.labelIds);
-          for (const lid of patch.labelIdsAdd) set.add(lid);
-          msg.labelIds = Array.from(set);
-        }
-        if (patch.labelIdsRemove && patch.labelIdsRemove.length > 0) {
-          const removeSet = new Set(patch.labelIdsRemove);
-          msg.labelIds = msg.labelIds.filter((lid) => !removeSet.has(lid));
-        }
-        msg.updatedAt = nowIso;
-      }
 
-      saveState(store, state);
-      notify();
+        if (patch.labelIdsAdd && patch.labelIdsAdd.length > 0) {
+          const validLabelIds = new Set(state.labels.map((l) => l.id));
+          for (const lid of patch.labelIdsAdd) {
+            if (!validLabelIds.has(lid)) {
+              throw new Error('invalid:label');
+            }
+          }
+        }
+
+        const nowIso = new Date().toISOString();
+        for (const msg of targets) {
+          if (patch.isRead !== undefined) msg.isRead = patch.isRead;
+          if (patch.isStarred !== undefined) msg.isStarred = patch.isStarred;
+          if (patch.isPinned !== undefined) msg.isPinned = patch.isPinned;
+          if (patch.priority !== undefined) msg.priority = patch.priority;
+          if (patch.folder !== undefined) {
+            msg.folder = patch.folder;
+            if (patch.folder === 'snoozed') {
+              msg.snoozedUntil = patch.snoozedUntil as string;
+            } else {
+              delete msg.snoozedUntil;
+            }
+          } else if (patch.snoozedUntil !== undefined) {
+            if (patch.snoozedUntil === null) {
+              delete msg.snoozedUntil;
+            } else {
+              msg.snoozedUntil = patch.snoozedUntil;
+            }
+          }
+          if (patch.labelIdsAdd && patch.labelIdsAdd.length > 0) {
+            const set = new Set(msg.labelIds);
+            for (const lid of patch.labelIdsAdd) set.add(lid);
+            msg.labelIds = Array.from(set);
+          }
+          if (patch.labelIdsRemove && patch.labelIdsRemove.length > 0) {
+            const removeSet = new Set(patch.labelIdsRemove);
+            msg.labelIds = msg.labelIds.filter((lid) => !removeSet.has(lid));
+          }
+          msg.updatedAt = nowIso;
+        }
+
+        saveState(store, state);
+        notify();
+      });
     },
 
     async deleteForever(messageIds: string[]): Promise<void> {
       await maybeDelay();
-      const state = await ensureState();
-      const { user } = requireUser(state);
-      const visibleIds = getVisibleMailboxIds(state, user);
+      return mutate(async () => {
+        const state = await ensureStateUnlocked();
+        const { user } = requireUser(state);
+        const visibleIds = getVisibleMailboxIds(state, user);
 
-      const deleteSet = new Set<string>();
-      for (const id of messageIds) {
-        const msg = state.messages.find((m) => m.id === id);
-        if (!msg) throw new Error('not-found');
-        if (!visibleIds.has(msg.mailboxId)) {
-          throw new Error('permission:denied');
+        const deleteSet = new Set<string>();
+        const removedAttIds: string[] = [];
+        for (const id of messageIds) {
+          const msg = state.messages.find((m) => m.id === id);
+          if (!msg || !visibleIds.has(msg.mailboxId)) {
+            throw new Error('not-found');
+          }
+          if (msg.folder !== 'trash' && msg.folder !== 'spam') {
+            throw new Error('permission:denied');
+          }
+          deleteSet.add(id);
+          for (const att of msg.attachments) {
+            removedAttIds.push(att.id);
+          }
         }
-        if (msg.folder !== 'trash' && msg.folder !== 'spam') {
-          throw new Error('permission:denied');
-        }
-        deleteSet.add(id);
-      }
 
-      state.messages = state.messages.filter((m) => !deleteSet.has(m.id));
-      saveState(store, state);
-      notify();
+        state.messages = state.messages.filter((m) => !deleteSet.has(m.id));
+        pruneUnusedCustomAttachments(state, removedAttIds);
+        saveState(store, state);
+        notify();
+      });
     },
 
     async counts(mailboxId?: string): Promise<Partial<Record<Folder, number>>> {
@@ -654,240 +828,266 @@ export function createDemoBackend(storage?: Storage): MailBackend {
 
     async createLabel(name: string, color: string): Promise<Label> {
       await maybeDelay();
-      const state = await ensureState();
-      requireUser(state);
-      const label: Label = {
-        id: `lbl-${generateId()}`,
-        name: name.trim(),
-        color,
-      };
-      state.labels.push(label);
-      saveState(store, state);
-      notify();
-      return { ...label };
+      return mutate(async () => {
+        const state = await ensureStateUnlocked();
+        requireUser(state);
+        const label: Label = {
+          id: `lbl-${generateId()}`,
+          name: name.trim(),
+          color,
+        };
+        state.labels.push(label);
+        saveState(store, state);
+        notify();
+        return { ...label };
+      });
     },
 
     async deleteLabel(id: string): Promise<void> {
       await maybeDelay();
-      const state = await ensureState();
-      requireUser(state);
-      const idx = state.labels.findIndex((l) => l.id === id);
-      if (idx === -1) throw new Error('not-found');
-      state.labels.splice(idx, 1);
-      for (const m of state.messages) {
-        if (m.labelIds.includes(id)) {
-          m.labelIds = m.labelIds.filter((lid) => lid !== id);
+      return mutate(async () => {
+        const state = await ensureStateUnlocked();
+        requireUser(state);
+        const idx = state.labels.findIndex((l) => l.id === id);
+        if (idx === -1) throw new Error('not-found');
+        state.labels.splice(idx, 1);
+        for (const m of state.messages) {
+          if (m.labelIds.includes(id)) {
+            m.labelIds = m.labelIds.filter((lid) => lid !== id);
+          }
         }
-      }
-      saveState(store, state);
-      notify();
+        saveState(store, state);
+        notify();
+      });
     },
 
     async saveDraft(d: Draft): Promise<{ id: string }> {
       await maybeDelay();
-      const state = await ensureState();
-      const { user } = requireUser(state);
-      const visibleIds = getVisibleMailboxIds(state, user);
+      return mutate(async () => {
+        const prepared = await prepareAttachments(d.attachments);
+        const state = await ensureStateUnlocked();
+        const { user } = requireUser(state);
+        const visibleIds = getVisibleMailboxIds(state, user);
 
-      if (!visibleIds.has(d.mailboxId)) {
-        throw new Error('permission:denied');
-      }
-      const mailbox = state.mailboxes.find((mb) => mb.id === d.mailboxId);
-      if (!mailbox) throw new Error('not-found');
-
-      const nowIso = new Date().toISOString();
-
-      if (d.id) {
-        const existing = state.messages.find((m) => m.id === d.id);
-        if (!existing) throw new Error('not-found');
-        if (!visibleIds.has(existing.mailboxId) || existing.direction !== 'draft') {
+        if (!visibleIds.has(d.mailboxId)) {
           throw new Error('permission:denied');
         }
-        const attachments = await persistDraftAttachments(
-          state,
-          existing.id,
-          d.attachments
-        );
-        existing.mailboxId = d.mailboxId;
-        existing.from = { address: mailbox.address, name: mailbox.displayName };
-        existing.to = [...d.to];
-        existing.cc = [...d.cc];
-        existing.bcc = [...d.bcc];
-        existing.subject = d.subject;
-        existing.textBody = d.text;
-        existing.htmlBody = d.html;
-        existing.preview = buildPreview(d.text, d.html);
-        existing.attachments = attachments;
-        existing.hasAttachments = attachments.length > 0;
-        existing.scheduledAt = d.scheduledAt;
-        existing.inReplyTo = d.inReplyToMessageId;
-        existing.updatedAt = nowIso;
+        const mailbox = state.mailboxes.find((mb) => mb.id === d.mailboxId);
+        if (!mailbox) throw new Error('not-found');
 
+        const nowIso = new Date().toISOString();
+
+        if (d.id) {
+          const existing = state.messages.find((m) => m.id === d.id);
+          if (!existing) throw new Error('not-found');
+          if (!visibleIds.has(existing.mailboxId) || existing.direction !== 'draft') {
+            throw new Error('permission:denied');
+          }
+          const oldAttIds = existing.attachments.map((a) => a.id);
+          const attachments = applyPreparedAttachments(state, existing.id, prepared);
+          existing.mailboxId = d.mailboxId;
+          existing.from = { address: mailbox.address, name: mailbox.displayName };
+          existing.to = [...d.to];
+          existing.cc = [...d.cc];
+          existing.bcc = [...d.bcc];
+          existing.subject = d.subject;
+          existing.textBody = d.text;
+          existing.htmlBody = d.html;
+          existing.preview = buildPreview(d.text, d.html);
+          existing.attachments = attachments;
+          existing.hasAttachments = attachments.length > 0;
+          existing.scheduledAt = d.scheduledAt;
+          existing.inReplyTo = d.inReplyToMessageId;
+          existing.updatedAt = nowIso;
+
+          pruneUnusedCustomAttachments(state, oldAttIds);
+          saveState(store, state);
+          notify();
+          return { id: existing.id };
+        }
+
+        const id = generateId();
+        let threadId = generateId();
+        if (d.inReplyToMessageId) {
+          const parent = state.messages.find(
+            (m) => m.id === d.inReplyToMessageId && visibleIds.has(m.mailboxId)
+          );
+          if (parent) threadId = parent.threadId;
+        }
+
+        const attachments = applyPreparedAttachments(state, id, prepared);
+        const draftMsg: Message = {
+          id,
+          threadId,
+          mailboxId: mailbox.id,
+          direction: 'draft',
+          folder: 'drafts',
+          from: { address: mailbox.address, name: mailbox.displayName },
+          to: [...d.to],
+          cc: [...d.cc],
+          bcc: [...d.bcc],
+          subject: d.subject,
+          textBody: d.text,
+          htmlBody: d.html,
+          preview: buildPreview(d.text, d.html),
+          isRead: true,
+          isStarred: false,
+          isPinned: false,
+          priority: 'normal',
+          hasAttachments: attachments.length > 0,
+          attachments,
+          labelIds: [],
+          scheduledAt: d.scheduledAt,
+          inReplyTo: d.inReplyToMessageId,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+
+        state.messages.push(draftMsg);
         saveState(store, state);
         notify();
-        return { id: existing.id };
-      }
-
-      const id = generateId();
-      let threadId = generateId();
-      if (d.inReplyToMessageId) {
-        const parent = state.messages.find(
-          (m) => m.id === d.inReplyToMessageId && visibleIds.has(m.mailboxId)
-        );
-        if (parent) threadId = parent.threadId;
-      }
-
-      const attachments = await persistDraftAttachments(state, id, d.attachments);
-      const draftMsg: Message = {
-        id,
-        threadId,
-        mailboxId: mailbox.id,
-        direction: 'draft',
-        folder: 'drafts',
-        from: { address: mailbox.address, name: mailbox.displayName },
-        to: [...d.to],
-        cc: [...d.cc],
-        bcc: [...d.bcc],
-        subject: d.subject,
-        textBody: d.text,
-        htmlBody: d.html,
-        preview: buildPreview(d.text, d.html),
-        isRead: true,
-        isStarred: false,
-        isPinned: false,
-        priority: 'normal',
-        hasAttachments: attachments.length > 0,
-        attachments,
-        labelIds: [],
-        scheduledAt: d.scheduledAt,
-        inReplyTo: d.inReplyToMessageId,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      };
-
-      state.messages.push(draftMsg);
-      saveState(store, state);
-      notify();
-      return { id };
+        return { id };
+      });
     },
 
     async deleteDraft(id: string): Promise<void> {
       await maybeDelay();
-      const state = await ensureState();
-      const { user } = requireUser(state);
-      const visibleIds = getVisibleMailboxIds(state, user);
+      return mutate(async () => {
+        const state = await ensureStateUnlocked();
+        const { user } = requireUser(state);
+        const visibleIds = getVisibleMailboxIds(state, user);
 
-      const idx = state.messages.findIndex((m) => m.id === id);
-      if (idx === -1) throw new Error('not-found');
-      const msg = state.messages[idx];
-      if (!visibleIds.has(msg.mailboxId) || msg.direction !== 'draft') {
-        throw new Error('permission:denied');
-      }
+        const idx = state.messages.findIndex((m) => m.id === id);
+        if (idx === -1) throw new Error('not-found');
+        const msg = state.messages[idx];
+        if (!visibleIds.has(msg.mailboxId) || msg.direction !== 'draft') {
+          throw new Error('permission:denied');
+        }
 
-      state.messages.splice(idx, 1);
-      saveState(store, state);
-      notify();
+        const removedAttIds = msg.attachments.map((a) => a.id);
+        state.messages.splice(idx, 1);
+        pruneUnusedCustomAttachments(state, removedAttIds);
+        saveState(store, state);
+        notify();
+      });
     },
 
     async send(d: Draft): Promise<SendResult> {
       await maybeDelay();
-      const state = await ensureState();
-      const { user } = requireUser(state);
-      const visibleIds = getVisibleMailboxIds(state, user);
+      return mutate(async () => {
+        const prepared = await prepareAttachments(d.attachments);
+        const state = await ensureStateUnlocked();
+        const { user } = requireUser(state);
+        const visibleIds = getVisibleMailboxIds(state, user);
 
-      if (!visibleIds.has(d.mailboxId)) {
-        throw new Error('permission:denied');
-      }
-      const mailbox = state.mailboxes.find((mb) => mb.id === d.mailboxId);
-      if (!mailbox || !mailbox.canSend) {
-        throw new Error('permission:denied');
-      }
-
-      const allRecipients = [...d.to, ...d.cc, ...d.bcc]
-        .map((a) => a.trim())
-        .filter((a) => a.length > 0);
-      if (
-        allRecipients.length === 0 ||
-        allRecipients.some((addr) => !EMAIL_RE.test(addr))
-      ) {
-        throw new Error('compose:invalid-recipient');
-      }
-
-      const nowMs = Date.now();
-      const nowIso = new Date(nowMs).toISOString();
-      const isScheduled =
-        Boolean(d.scheduledAt) && Date.parse(d.scheduledAt!) > nowMs;
-
-      let threadId = generateId();
-      if (d.inReplyToMessageId) {
-        const parent = state.messages.find(
-          (m) => m.id === d.inReplyToMessageId && visibleIds.has(m.mailboxId)
-        );
-        if (parent) threadId = parent.threadId;
-      }
-
-      const messageId = generateId();
-      const attachments = await persistDraftAttachments(
-        state,
-        messageId,
-        d.attachments
-      );
-
-      const sentMsg: Message = {
-        id: messageId,
-        threadId,
-        mailboxId: mailbox.id,
-        direction: 'outbound',
-        folder: isScheduled ? 'scheduled' : 'sent',
-        from: { address: mailbox.address, name: mailbox.displayName },
-        to: d.to.map((a) => a.trim()).filter(Boolean),
-        cc: d.cc.map((a) => a.trim()).filter(Boolean),
-        bcc: d.bcc.map((a) => a.trim()).filter(Boolean),
-        subject: d.subject,
-        textBody: d.text,
-        htmlBody: d.html,
-        preview: buildPreview(d.text, d.html),
-        isRead: true,
-        isStarred: false,
-        isPinned: false,
-        priority: 'normal',
-        hasAttachments: attachments.length > 0,
-        attachments,
-        labelIds: [],
-        sentAt: isScheduled ? undefined : nowIso,
-        scheduledAt: isScheduled ? d.scheduledAt : undefined,
-        inReplyTo: d.inReplyToMessageId,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      };
-
-      state.messages.push(sentMsg);
-
-      if (d.id) {
-        const draftIdx = state.messages.findIndex(
-          (m) =>
-            m.id === d.id &&
-            m.direction === 'draft' &&
-            visibleIds.has(m.mailboxId)
-        );
-        if (draftIdx !== -1) {
-          state.messages.splice(draftIdx, 1);
+        if (!visibleIds.has(d.mailboxId)) {
+          throw new Error('permission:denied');
         }
-      }
+        const mailbox = state.mailboxes.find((mb) => mb.id === d.mailboxId);
+        if (!mailbox || !mailbox.canSend) {
+          throw new Error('permission:denied');
+        }
 
-      if (!isScheduled) {
-        deliverToLocalMailboxes(state, sentMsg, nowIso);
-      }
+        const allRecipients = [...d.to, ...d.cc, ...d.bcc]
+          .map((a) => a.trim())
+          .filter((a) => a.length > 0);
+        if (
+          allRecipients.length === 0 ||
+          allRecipients.some((addr) => !EMAIL_RE.test(addr))
+        ) {
+          throw new Error('compose:invalid-recipient');
+        }
 
-      saveState(store, state);
-      notify();
-      return { ok: true, messageId };
+        const nowMs = Date.now();
+        const nowIso = new Date(nowMs).toISOString();
+        const isScheduled =
+          Boolean(d.scheduledAt) && Date.parse(d.scheduledAt!) > nowMs;
+
+        let threadId = generateId();
+        if (d.inReplyToMessageId) {
+          const parent = state.messages.find(
+            (m) => m.id === d.inReplyToMessageId && visibleIds.has(m.mailboxId)
+          );
+          if (parent) threadId = parent.threadId;
+        }
+
+        const messageId = generateId();
+        const attachments = applyPreparedAttachments(state, messageId, prepared);
+
+        const sentMsg: Message = {
+          id: messageId,
+          threadId,
+          mailboxId: mailbox.id,
+          direction: 'outbound',
+          folder: isScheduled ? 'scheduled' : 'sent',
+          from: { address: mailbox.address, name: mailbox.displayName },
+          to: d.to.map((a) => a.trim()).filter(Boolean),
+          cc: d.cc.map((a) => a.trim()).filter(Boolean),
+          bcc: d.bcc.map((a) => a.trim()).filter(Boolean),
+          subject: d.subject,
+          textBody: d.text,
+          htmlBody: d.html,
+          preview: buildPreview(d.text, d.html),
+          isRead: true,
+          isStarred: false,
+          isPinned: false,
+          priority: 'normal',
+          hasAttachments: attachments.length > 0,
+          attachments,
+          labelIds: [],
+          sentAt: isScheduled ? undefined : nowIso,
+          scheduledAt: isScheduled ? d.scheduledAt : undefined,
+          inReplyTo: d.inReplyToMessageId,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+
+        state.messages.push(sentMsg);
+
+        const removedDraftAttIds: string[] = [];
+        if (d.id) {
+          const draftIdx = state.messages.findIndex(
+            (m) =>
+              m.id === d.id &&
+              m.direction === 'draft' &&
+              visibleIds.has(m.mailboxId)
+          );
+          if (draftIdx !== -1) {
+            for (const att of state.messages[draftIdx].attachments) {
+              removedDraftAttIds.push(att.id);
+            }
+            state.messages.splice(draftIdx, 1);
+          }
+        }
+
+        if (!isScheduled) {
+          deliverToLocalMailboxes(state, sentMsg, nowIso);
+        }
+
+        if (removedDraftAttIds.length > 0) {
+          pruneUnusedCustomAttachments(state, removedDraftAttIds);
+        }
+
+        saveState(store, state);
+        notify();
+        return { ok: true, messageId };
+      });
     },
 
     async attachmentUrl(a: AttachmentMeta): Promise<string> {
       await maybeDelay();
       const state = await ensureState();
-      requireUser(state);
+      const { user } = requireUser(state);
+      const visibleIds = getVisibleMailboxIds(state, user);
+      const belongsToVisible = state.messages.some(
+        (m) =>
+          visibleIds.has(m.mailboxId) &&
+          m.id === a.messageId &&
+          m.attachments.some((att) => att.id === a.id)
+      );
+      if (!belongsToVisible) {
+        throw new Error('not-found');
+      }
       const custom = state.customAttachments[a.id];
       return createAttachmentUrl(a, custom);
     },
@@ -975,11 +1175,13 @@ export function createDemoBackend(storage?: Storage): MailBackend {
 
     async saveSettings(s: Settings): Promise<void> {
       await maybeDelay();
-      const state = await ensureState();
-      const { user } = requireUser(state);
-      state.settingsByUser[user.id] = { ...s };
-      saveState(store, state);
-      notify();
+      return mutate(async () => {
+        const state = await ensureStateUnlocked();
+        const { user } = requireUser(state);
+        state.settingsByUser[user.id] = { ...s };
+        saveState(store, state);
+        notify();
+      });
     },
 
     async listSignatures(): Promise<Signature[]> {
@@ -992,18 +1194,20 @@ export function createDemoBackend(storage?: Storage): MailBackend {
 
     async saveSignature(s: Signature): Promise<void> {
       await maybeDelay();
-      const state = await ensureState();
-      const { user } = requireUser(state);
-      ensureUserDefaults(state, user);
-      const list = state.signaturesByUser[user.id];
-      const idx = list.findIndex((item) => item.id === s.id);
-      if (idx >= 0) {
-        list[idx] = { ...s };
-      } else {
-        list.push({ ...s, id: s.id || generateId() });
-      }
-      saveState(store, state);
-      notify();
+      return mutate(async () => {
+        const state = await ensureStateUnlocked();
+        const { user } = requireUser(state);
+        ensureUserDefaults(state, user);
+        const list = state.signaturesByUser[user.id];
+        const idx = list.findIndex((item) => item.id === s.id);
+        if (idx >= 0) {
+          list[idx] = { ...s };
+        } else {
+          list.push({ ...s, id: s.id || generateId() });
+        }
+        saveState(store, state);
+        notify();
+      });
     },
 
     async listTemplates(): Promise<Template[]> {
@@ -1016,38 +1220,42 @@ export function createDemoBackend(storage?: Storage): MailBackend {
 
     async saveTemplate(t: Template): Promise<Template> {
       await maybeDelay();
-      const state = await ensureState();
-      const { user } = requireUser(state);
-      ensureUserDefaults(state, user);
-      const list = state.templatesByUser[user.id];
-      const idx = list.findIndex((item) => item.id === t.id);
-      const saved: Template = {
-        id: t.id || generateId(),
-        name: t.name,
-        subject: t.subject,
-        html: t.html,
-      };
-      if (idx >= 0) {
-        list[idx] = saved;
-      } else {
-        list.push(saved);
-      }
-      saveState(store, state);
-      notify();
-      return { ...saved };
+      return mutate(async () => {
+        const state = await ensureStateUnlocked();
+        const { user } = requireUser(state);
+        ensureUserDefaults(state, user);
+        const list = state.templatesByUser[user.id];
+        const idx = list.findIndex((item) => item.id === t.id);
+        const saved: Template = {
+          id: t.id || generateId(),
+          name: t.name,
+          subject: t.subject,
+          html: t.html,
+        };
+        if (idx >= 0) {
+          list[idx] = saved;
+        } else {
+          list.push(saved);
+        }
+        saveState(store, state);
+        notify();
+        return { ...saved };
+      });
     },
 
     async deleteTemplate(id: string): Promise<void> {
       await maybeDelay();
-      const state = await ensureState();
-      const { user } = requireUser(state);
-      ensureUserDefaults(state, user);
-      const list = state.templatesByUser[user.id];
-      const idx = list.findIndex((t) => t.id === id);
-      if (idx === -1) throw new Error('not-found');
-      list.splice(idx, 1);
-      saveState(store, state);
-      notify();
+      return mutate(async () => {
+        const state = await ensureStateUnlocked();
+        const { user } = requireUser(state);
+        ensureUserDefaults(state, user);
+        const list = state.templatesByUser[user.id];
+        const idx = list.findIndex((t) => t.id === id);
+        if (idx === -1) throw new Error('not-found');
+        list.splice(idx, 1);
+        saveState(store, state);
+        notify();
+      });
     },
 
     async listDemoUsers(): Promise<DemoUser[]> {
@@ -1063,68 +1271,80 @@ export function createDemoBackend(storage?: Storage): MailBackend {
 
     async createDemoUser(u: DemoUser & { password: string }): Promise<void> {
       await maybeDelay();
-      const state = await ensureState();
-      const email = u.email.trim();
-      const name = u.name.trim();
-      if (
-        !EMAIL_RE.test(email) ||
-        name.length === 0 ||
-        u.password.length < 8 ||
-        (u.role !== 'admin' && u.role !== 'member')
-      ) {
-        throw new Error('demo:invalid-user');
-      }
-
-      const exists = state.users.some(
-        (existing) => existing.email.toLowerCase() === email.toLowerCase()
-      );
-      if (exists) {
-        throw new Error('demo:user-exists');
-      }
-
-      const mailboxAddresses: string[] = [];
-      for (const rawAddr of u.mailboxAddresses) {
-        const addr = rawAddr.trim().toLowerCase();
-        if (!EMAIL_RE.test(addr)) {
+      return mutate(async () => {
+        const email = u.email.trim();
+        const name = u.name.trim();
+        if (
+          !EMAIL_RE.test(email) ||
+          name.length === 0 ||
+          u.password.length < 8 ||
+          (u.role !== 'admin' && u.role !== 'member')
+        ) {
           throw new Error('demo:invalid-user');
         }
-        mailboxAddresses.push(addr);
-        const mbExists = state.mailboxes.some(
-          (mb) => mb.address.toLowerCase() === addr
-        );
-        if (!mbExists) {
-          state.mailboxes.push({
-            id: `mb-${generateId()}`,
-            address: addr,
-            displayName: name,
-            isPrimary: false,
-            canSend: true,
-          });
+
+        const parsedAddresses: string[] = [];
+        for (const rawAddr of u.mailboxAddresses) {
+          const addr = rawAddr.trim().toLowerCase();
+          if (!EMAIL_RE.test(addr)) {
+            throw new Error('demo:invalid-user');
+          }
+          parsedAddresses.push(addr);
         }
-      }
 
-      const passwordHash = await hashPassword(u.password);
-      const newUser: DemoUserRecord = {
-        id: `user-${generateId()}`,
-        email,
-        name,
-        role: u.role,
-        mailboxAddresses,
-        passwordHash,
-      };
+        const { salt: passwordSalt, hash: passwordHash } = await hashPassword(
+          u.password
+        );
+        const state = await ensureStateUnlocked();
 
-      state.users.push(newUser);
-      ensureUserDefaults(state, newUser);
-      saveState(store, state);
-      notify();
+        const exists = state.users.some(
+          (existing) => existing.email.toLowerCase() === email.toLowerCase()
+        );
+        if (exists) {
+          throw new Error('demo:user-exists');
+        }
+
+        for (const addr of parsedAddresses) {
+          const mbExists = state.mailboxes.some(
+            (mb) => mb.address.toLowerCase() === addr
+          );
+          if (!mbExists) {
+            state.mailboxes.push({
+              id: `mb-${generateId()}`,
+              address: addr,
+              displayName: name,
+              isPrimary: false,
+              canSend: true,
+            });
+          }
+        }
+
+        const newUser: DemoUserRecord = {
+          id: `user-${generateId()}`,
+          email,
+          name,
+          role: u.role,
+          mailboxAddresses: parsedAddresses,
+          passwordSalt,
+          passwordHash,
+        };
+
+        state.users.push(newUser);
+        ensureUserDefaults(state, newUser);
+        saveState(store, state);
+        notify();
+      });
     },
 
     async resetDemo(): Promise<void> {
       await maybeDelay();
-      const fresh = await createSeedState();
-      saveState(store, fresh);
-      saveSession(store, null);
-      notify();
+      return mutate(async () => {
+        const fresh = await createSeedState();
+        clearAttachmentUrlCache();
+        saveState(store, fresh);
+        saveSession(store, null);
+        notify();
+      });
     },
   };
 }
