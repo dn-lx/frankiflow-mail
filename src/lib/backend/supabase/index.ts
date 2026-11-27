@@ -287,7 +287,7 @@ export function createSupabaseBackend(): MailBackend {
   }
 
   async function sessionWithAccess(): Promise<{ session: Session; user: UserSession } | null> {
-    const data = await checked(supabase.auth.getSession());
+    const data = await checked<{ session: Session | null }>(supabase.auth.getSession());
     const session = data.session;
     if (!session) return null;
     const profile = await readRow(supabase.from(TABLE.users).select('user_id,email,role,active')
