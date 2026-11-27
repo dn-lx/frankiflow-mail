@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test \"tests/**/*.test.ts\"",
     "test:legacy": "node --test legacy/tests/",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "postbuild": "node scripts/fix-rsc-paths.mjs out"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.119.2",
@@ -25,5 +26,7 @@
     "@types/react-dom": "19.3.0",
     "typescript": "~5.9"
   },
-  "engines": { "node": ">=22.6" }
+  "engines": {
+    "node": ">=22.6"
+  }
 }
