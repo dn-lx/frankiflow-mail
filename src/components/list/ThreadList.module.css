@@ -64,10 +64,21 @@
   background-repeat: no-repeat;
 }
 
-.selectMenu > button {
+.filterButton {
   width: 22px;
   min-width: 22px;
   color: var(--color-text-secondary);
+}
+
+.filterDot {
+  position: absolute;
+  top: 5px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  pointer-events: none;
 }
 
 @media (pointer: coarse) {
@@ -77,10 +88,15 @@
   }
 
   /* 44px effective target; the icon stays small. */
-  .selectMenu > button {
+  .filterButton {
     width: 44px;
     min-width: 44px;
     height: 44px;
+  }
+
+  .filterDot {
+    top: 10px;
+    right: 10px;
   }
 }
 

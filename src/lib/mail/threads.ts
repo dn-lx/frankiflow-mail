@@ -209,36 +209,6 @@ export function snoozePresets(now: Date = new Date()): SnoozePresets {
   };
 }
 
-/** Selection presets of the list header menu (like Gmail). */
-export type SelectFilter = 'all' | 'none' | 'read' | 'unread' | 'starred' | 'unstarred';
-
-export const SELECT_FILTERS: readonly SelectFilter[] = ['all', 'none', 'read', 'unread', 'starred', 'unstarred'];
-
-/**
- * Ids (in list order) of the loaded threads matching `filter`:
- * read = no unread messages, unread = at least one, starred / unstarred by `isStarred`;
- * `all` = every thread, `none` = nothing.
- */
-export function selectByFilter(threads: readonly ThreadSummary[], filter: SelectFilter): string[] {
-  const match = (t: ThreadSummary): boolean => {
-    switch (filter) {
-      case 'all':
-        return true;
-      case 'none':
-        return false;
-      case 'read':
-        return t.unreadCount === 0;
-      case 'unread':
-        return t.unreadCount > 0;
-      case 'starred':
-        return t.isStarred;
-      case 'unstarred':
-        return !t.isStarred;
-    }
-  };
-  return threads.filter(match).map((t) => t.id);
-}
-
 /** Folders whose rows show the recipients ("To: …") instead of the sender. */
 export function showsRecipients(folder: Folder): boolean {
   return folder === 'sent' || folder === 'drafts' || folder === 'scheduled';

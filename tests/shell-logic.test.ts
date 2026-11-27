@@ -26,7 +26,6 @@ import {
   rangeIds,
   removeThreads,
   sameThread,
-  selectByFilter,
   showsRecipients,
   snoozePresets,
   sortThreads,
@@ -34,7 +33,7 @@ import {
   successorId,
   toLocalInputValue,
 } from '../src/lib/mail/threads.ts';
-import { isFolder, parseView, viewHref } from '../src/components/shell/view.ts';
+import { buildSearchQuery, isFolder, parseView, viewHref } from '../src/components/shell/view.ts';
 import type { Message, ThreadSummary } from '../src/lib/backend/types.ts';
 
 function makeThread(id: string, lastMessageAt: string, overrides: Partial<ThreadSummary> = {}): ThreadSummary {
@@ -279,30 +278,6 @@ describe('search input vs. filter chips', () => {
   });
 });
 
-describe('selectByFilter (list header selection menu)', () => {
-  const threads = [
-    makeThread('t1', '2026-03-10T10:00:00.000Z', { unreadCount: 2, isStarred: true }),
-    makeThread('t2', '2026-03-09T10:00:00.000Z', { unreadCount: 0, isStarred: false }),
-    makeThread('t3', '2026-03-08T10:00:00.000Z', { unreadCount: 1, isStarred: false }),
-    makeThread('t4', '2026-03-07T10:00:00.000Z', { unreadCount: 0, isStarred: true }),
-  ];
-
-  it('selects matching loaded threads in list order', () => {
-    assert.deepEqual(selectByFilter(threads, 'all'), ['t1', 't2', 't3', 't4']);
-    assert.deepEqual(selectByFilter(threads, 'none'), []);
-    assert.deepEqual(selectByFilter(threads, 'read'), ['t2', 't4']);
-    assert.deepEqual(selectByFilter(threads, 'unread'), ['t1', 't3']);
-    assert.deepEqual(selectByFilter(threads, 'starred'), ['t1', 't4']);
-    assert.deepEqual(selectByFilter(threads, 'unstarred'), ['t2', 't3']);
-  });
-
-  it('returns an empty list when nothing matches or nothing is loaded', () => {
-    const allRead = threads.map((t) => ({ ...t, unreadCount: 0 }));
-    assert.deepEqual(selectByFilter(allRead, 'unread'), []);
-    assert.deepEqual(selectByFilter([], 'all'), []);
-  });
-});
-
 describe('recipients for Sent / Drafts rows', () => {
   const own = [
     { address: 'team@frankiflow.de', displayName: 'FrankiFlow Team' },
@@ -351,6 +326,7 @@ describe('parseView and viewHref URL round-trip', () => {
       folder: 'inbox',
       labelId: undefined,
       search: undefined,
+      filter: undefined,
       threadId: undefined,
     });
 
@@ -359,29 +335,50 @@ describe('parseView and viewHref URL round-trip', () => {
       mailbox: 'mb-info',
       folder: 'sent',
       search: query,
+      filter: 'unread',
       threadId: 'th-07',
     });
     assert.ok(href.startsWith('/mail/?'));
 
     const sp = new URLSearchParams(href.slice('/mail/?'.length));
     assert.equal(sp.get('demo'), '1');
+    assert.equal(sp.get('r'), 'unread');
     const parsed = parseView(sp);
     assert.deepEqual(parsed, {
       mailbox: 'mb-info',
       folder: 'sent',
       labelId: undefined,
       search: query,
+      filter: 'unread',
       threadId: 'th-07',
     });
 
-    // Resetting back to default inbox clears mail params while preserving demo=1
+    // Changing folder/mailbox/label keeps the filter.
+    const nextFolderHref = viewHref(sp, parsed, { folder: 'archive', labelId: null, search: null, threadId: null });
+    assert.equal(parseView(new URLSearchParams(nextFolderHref.slice('/mail/?'.length))).filter, 'unread');
+
+    // Resetting back to default inbox + clearing filter clears mail params while preserving demo=1
     const backHref = viewHref(sp, parsed, {
       mailbox: 'all',
       folder: 'inbox',
       search: null,
+      filter: null,
       threadId: null,
     });
     assert.equal(backHref, '/mail/?demo=1');
+  });
+
+  it('ignores invalid r values and buildSearchQuery appends filter operators', () => {
+    assert.equal(parseView(new URLSearchParams('r=bogus')).filter, undefined);
+    assert.equal(parseView(new URLSearchParams('r=unstarred')).filter, 'unstarred');
+
+    assert.equal(buildSearchQuery(undefined, undefined), undefined);
+    assert.equal(buildSearchQuery('Rechnung', undefined), 'Rechnung');
+    assert.equal(buildSearchQuery(undefined, 'unread'), 'is:unread');
+    assert.equal(buildSearchQuery(undefined, 'read'), 'is:read');
+    assert.equal(buildSearchQuery(undefined, 'starred'), 'is:starred');
+    assert.equal(buildSearchQuery(undefined, 'unstarred'), 'is:unstarred');
+    assert.equal(buildSearchQuery('from:anna', 'unstarred'), 'from:anna is:unstarred');
   });
 
   it('defaults folder to all when a label is set without an explicit folder', () => {

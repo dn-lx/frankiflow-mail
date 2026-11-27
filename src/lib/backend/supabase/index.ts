@@ -151,6 +151,7 @@ function applySearch(query: MessageQuery, tokens: SearchToken[], now: string): M
       if (lower === 'unread') query = query.or('is_read.eq.false,is_read.is.null');
       if (lower === 'read') query = query.eq('is_read', true);
       if (lower === 'starred') query = query.eq('is_starred', true);
+      if (lower === 'unstarred') query = query.or('is_starred.eq.false,is_starred.is.null');
       if (lower === 'pinned') query = query.eq('is_pinned', true);
       if (lower === 'important') query = query.eq('priority', 'high');
       if (lower === 'muted') query = query.eq('is_muted', true);

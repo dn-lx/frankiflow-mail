@@ -14,7 +14,7 @@ import { LIST_MAX, LIST_MIN, useCounts, useLayout, useListWidth, useMailMeta } f
 import { ShortcutHelp } from './ShortcutHelp';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
-import type { MailView, ViewPatch } from './view';
+import { buildSearchQuery, type MailView, type ViewPatch } from './view';
 import styles from './AppShell.module.css';
 import './strings';
 
@@ -57,11 +57,12 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
   const reading = !!view.threadId;
   const mailboxId = view.mailbox === 'all' ? undefined : view.mailbox;
 
+  const effectiveSearch = useMemo(() => buildSearchQuery(view.search, view.filter), [view.search, view.filter]);
   const query = useMemo<ThreadListQuery>(
-    () => ({ mailboxId, folder: view.folder, labelId: view.labelId, search: view.search }),
-    [mailboxId, view.folder, view.labelId, view.search],
+    () => ({ mailboxId, folder: view.folder, labelId: view.labelId, search: effectiveSearch }),
+    [mailboxId, view.folder, view.labelId, effectiveSearch],
   );
-  const queryKey = `${mailboxId ?? ''}|${view.folder}|${view.labelId ?? ''}|${view.search ?? ''}`;
+  const queryKey = `${mailboxId ?? ''}|${view.folder}|${view.labelId ?? ''}|${effectiveSearch ?? ''}`;
   const meta = useMailMeta();
   const data = useThreadList(query, meta.mailboxes);
   const countsState = useCounts(mailboxId);
@@ -327,7 +328,8 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
   // Tab title with the inbox unread count.
   const labelName = view.labelId ? meta.labels.find((l) => l.id === view.labelId)?.name : undefined;
   const folderName = labelName ?? t(`folder.${view.folder}`);
-  const listTitle = view.search ? (isPhone ? t('shell.search') : `${t('shell.search')} · ${folderName}`) : folderName;
+  const baseTitle = view.search ? (isPhone ? t('shell.search') : `${t('shell.search')} · ${folderName}`) : folderName;
+  const listTitle = view.filter ? `${baseTitle} · ${t(`list.filter.${view.filter}`)}` : baseTitle;
   const activeMailbox = mailboxId ? meta.mailboxes?.find((m) => m.id === mailboxId) : undefined;
   const activeMailboxText = activeMailbox ? t('shell.activeMailbox', { mailbox: activeMailbox.address }) : '';
   const listSubtitle =
@@ -443,6 +445,7 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
               folder={view.folder}
               labelId={view.labelId}
               search={view.search}
+              filter={view.filter}
               title={listTitle}
               subtitle={listSubtitle}
               labels={meta.labels}
@@ -455,6 +458,8 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
               onOpen={openThread}
               hrefFor={(id) => hrefFor({ threadId: id })}
               onClearSearch={() => onSearch('')}
+              onFilterChange={(next) => navigate({ filter: next ?? null })}
+              onClearFilter={() => navigate({ filter: null })}
             />
           </div>
           {pane === 'right' && (

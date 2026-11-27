@@ -78,6 +78,7 @@ registerStrings({
   'search.is.unread': { de: 'Ungelesen', en: 'Unread' },
   'search.is.read': { de: 'Gelesen', en: 'Read' },
   'search.is.starred': { de: 'Markiert', en: 'Starred' },
+  'search.is.unstarred': { de: 'Nicht markiert', en: 'Unstarred' },
   'search.is.pinned': { de: 'Angeheftet', en: 'Pinned' },
   'search.hint': { de: 'Tipp: from:anna is:unread', en: 'Tip: from:anna is:unread' },
   'search.placeholderShort': { de: 'Suchen …', en: 'Search …' },
