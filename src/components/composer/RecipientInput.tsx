@@ -16,8 +16,11 @@ import {
 import type { Contact, MailBackend } from '@/lib/backend/types';
 import { emailProblem, formatAddress, parseAddressList, splitAddressText, type ParsedAddress } from '@/lib/mail/addresses';
 import { Icon } from '../ui/Icon';
+import { newRecipientId, toRecipients } from './recipients.ts';
 import type { Recipient } from './types';
 import styles from './Composer.module.css';
+
+export { newRecipientId, toRecipients };
 
 export interface RecipientInputHandle {
   /** Turns any typed text into chips and returns the resulting list. */
@@ -34,24 +37,6 @@ export interface RecipientInputProps {
   handleRef?: Ref<RecipientInputHandle>;
   /** Extra controls at the end of the row (Cc / Bcc links). */
   trailing?: ReactNode;
-}
-
-let recipientCounter = 0;
-export function newRecipientId(): string {
-  recipientCounter += 1;
-  return `rcpt-${recipientCounter}`;
-}
-
-export function toRecipients(list: ParsedAddress[]): Recipient[] {
-  const seen = new Set<string>();
-  const out: Recipient[] = [];
-  for (const p of list) {
-    const key = p.address.toLowerCase();
-    if (!p.address || seen.has(key)) continue;
-    seen.add(key);
-    out.push({ id: newRecipientId(), address: p.address, name: p.name });
-  }
-  return out;
 }
 
 function hasOpenQuoteOrAngle(text: string): boolean {
@@ -212,8 +197,12 @@ export function RecipientInput({ label, value, onChange, backend, t, handleRef, 
     const pasted = e.clipboardData.getData('text');
     if (!pasted || !(/[,;\n]/.test(pasted) || pasted.includes('@'))) return;
     e.preventDefault();
-    const combined = `${textRef.current}${pasted}`;
-    commitText(combined);
+    // Replace the current selection (or insert at the caret) instead of appending.
+    const current = textRef.current;
+    const input = inputRef.current;
+    const start = input?.selectionStart ?? current.length;
+    const end = input?.selectionEnd ?? start;
+    commitText(`${current.slice(0, start)}${pasted}${current.slice(end)}`);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {

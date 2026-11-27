@@ -1,18 +1,22 @@
 'use client';
 
-import type { MailBackend, Mailbox, Message, Signature } from '@/lib/backend/types';
-import type { Lang } from '@/lib/i18n';
-import {
-  parseAddressList,
-  replyAllRecipients,
-  replyRecipients,
-  replySubject,
-} from '@/lib/mail/addresses';
-import { buildQuote, cleanComposeHtml, signatureBlock, textToHtml, type QuoteLabels } from './html';
-import { toRecipients } from './RecipientInput';
-import type { ComposeAttachment, ComposeInit, ComposerSnapshot } from './types';
+// Window content for a composer, built without React or the browser: the HTML
+// helpers and the date formatter are passed in, so this runs in Node tests too.
+
+import type { MailBackend, Mailbox, Message, Signature } from '../../lib/backend/types.ts';
+import { parseAddressList, replyAllRecipients, replyRecipients, replySubject } from '../../lib/mail/addresses.ts';
+import type { SubjectLang } from '../../lib/mail/addresses.ts';
+import type { HtmlKit, QuoteLabels } from './html-core.ts';
+import { toRecipients } from './recipients.ts';
+import type { ComposeAttachment, ComposeInit, ComposerSnapshot } from './types.ts';
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
+
+export interface SnapshotDeps {
+  html: HtmlKit;
+  /** Formats an ISO timestamp for quoted headers (locale-aware in the browser). */
+  formatDate: (iso: string) => string;
+}
 
 export function pickSignature(signatures: Signature[], mailboxId: string): Signature | undefined {
   const own = signatures.filter((s) => s.mailboxId === mailboxId);
@@ -23,7 +27,7 @@ export function sendableMailboxes(mailboxes: Mailbox[]): Mailbox[] {
   return mailboxes.filter((m) => m.canSend);
 }
 
-function quoteLabels(t: T): QuoteLabels {
+function quoteLabels(t: T, formatDate: (iso: string) => string): QuoteLabels {
   return {
     wrote: (vars) => t('composer.quote.wrote', vars),
     forwardedHeader: t('composer.quote.forwarded'),
@@ -32,6 +36,7 @@ function quoteLabels(t: T): QuoteLabels {
     subject: t('composer.quote.subject'),
     to: t('composer.quote.to'),
     cc: t('composer.quote.cc'),
+    formatDate,
   };
 }
 
@@ -46,7 +51,7 @@ function metaAttachments(message: Message | undefined): ComposeAttachment[] {
 }
 
 /** Only real message ids (not RFC Message-IDs) can be used as inReplyToMessageId. */
-function messageIdFrom(value: string | undefined): string | undefined {
+export function messageIdFrom(value: string | undefined): string | undefined {
   if (!value) return undefined;
   return /[<>@\s]/.test(value) ? undefined : value;
 }
@@ -57,11 +62,13 @@ export function buildSnapshot(
   message: Message | undefined,
   mailboxes: Mailbox[],
   signatures: Signature[],
-  lang: Lang,
+  lang: SubjectLang,
   t: T,
+  deps: SnapshotDeps,
 ): ComposerSnapshot | null {
   const sendable = sendableMailboxes(mailboxes);
   if (!sendable.length) return null;
+  const kit = deps.html;
   const canUse = (id: string | undefined) => !!id && sendable.some((m) => m.id === id);
   const fallback = (sendable.find((m) => m.isPrimary) ?? sendable[0]).id;
   const ownAddresses = mailboxes.map((m) => m.address);
@@ -70,7 +77,7 @@ export function buildSnapshot(
     const mailboxId = canUse(message.mailboxId) ? message.mailboxId : fallback;
     const cc = toRecipients(message.cc.flatMap((a) => parseAddressList(a)));
     const bcc = toRecipients(message.bcc.flatMap((a) => parseAddressList(a)));
-    const html = message.htmlBody ? cleanComposeHtml(message.htmlBody) : textToHtml(message.textBody || '');
+    const html = message.htmlBody ? kit.cleanComposeHtml(message.htmlBody) : kit.textToHtml(message.textBody || '');
     return {
       draftId: message.id,
       mailboxId,
@@ -89,12 +96,12 @@ export function buildSnapshot(
 
   const preferred = init.mailboxId ?? message?.mailboxId;
   const mailboxId = canUse(preferred) ? (preferred as string) : fallback;
-  const signature = signatureBlock(pickSignature(signatures, mailboxId)?.html);
+  const signature = kit.signatureBlock(pickSignature(signatures, mailboxId)?.html);
   const empty = '<p><br></p>';
 
   if ((init.mode === 'reply' || init.mode === 'replyAll' || init.mode === 'forward') && message) {
     const isForward = init.mode === 'forward';
-    const quote = buildQuote(message, isForward ? 'forward' : 'reply', lang, quoteLabels(t));
+    const quote = kit.buildQuote(message, isForward ? 'forward' : 'reply', quoteLabels(t, deps.formatDate));
     let to: string[] = [];
     let cc: string[] = [];
     if (init.mode === 'reply') to = replyRecipients(message, ownAddresses);
