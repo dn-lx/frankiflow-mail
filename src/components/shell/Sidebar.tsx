@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type CSSProperties } from 'react';
 import { useApp } from '@/components/providers/AppProvider';
-import { Badge, Button, Icon, IconButton, Select, useToast } from '@/components/ui';
+import { Badge, Button, Icon, IconButton, Menu, Select, useToast } from '@/components/ui';
 import type { Folder, Label, Mailbox } from '@/lib/backend/types';
 import { describeError } from '@/lib/i18n';
 import { CreateLabelDialog, DeleteLabelDialog } from './LabelDialogs';
@@ -158,12 +158,19 @@ export function Sidebar({ view, mailboxes, labels, counts, metaError, onRetryMet
                     <span className={styles.labelDot} style={{ '--label-color': l.color } as CSSProperties} aria-hidden="true" />
                     <span className={styles.navText}>{l.name}</span>
                   </Link>
-                  <IconButton
-                    icon="trash"
+                  <Menu
                     size="sm"
-                    className={styles.labelDelete}
-                    label={t('shell.labelDelete', { name: l.name })}
-                    onClick={() => setDeleting(l)}
+                    className={styles.labelMenu}
+                    label={t('shell.labelActions', { name: l.name })}
+                    items={[
+                      {
+                        id: 'delete',
+                        icon: 'trash',
+                        label: t('shell.labelDeleteItem'),
+                        danger: true,
+                        onSelect: () => setDeleting(l),
+                      },
+                    ]}
                   />
                 </li>
               );

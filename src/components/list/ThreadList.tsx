@@ -2,9 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useApp } from '@/components/providers/AppProvider';
-import { Button, Checkbox, Dialog, EmptyState, IconButton, Menu, Skeleton, type IconName, type MenuItem } from '@/components/ui';
+import { Button, Checkbox, Dialog, EmptyState, IconButton, Menu, Skeleton, useToast, type IconName, type MenuItem } from '@/components/ui';
 import type { Folder, Label, ThreadSummary } from '@/lib/backend/types';
-import { neighbourId, rangeIds, type ConcreteFolder } from '@/lib/mail/threads';
+import {
+  SELECT_FILTERS,
+  neighbourId,
+  otherParticipants,
+  rangeIds,
+  selectByFilter,
+  showsRecipients,
+  type ConcreteFolder,
+  type OwnIdentity,
+  type SelectFilter,
+} from '@/lib/mail/threads';
 import { ThreadRow, primaryActionFor, type RowCallbacks } from './ThreadRow';
 import type { ThreadActions } from './useThreadActions';
 import type { ThreadListData } from './useThreadList';
@@ -20,7 +30,11 @@ export interface ThreadListProps {
   search?: string;
   /** Heading shown above the list (folder, label or "Search results"). */
   title: string;
+  /** Second line under the title, e.g. the selected mailbox. */
+  subtitle?: string;
   labels: Label[];
+  /** The user's own mailboxes (Sent / Drafts rows show the other people). */
+  ownMailboxes?: readonly OwnIdentity[] | null;
   openId?: string;
   activeId?: string;
   onActiveChange: (id: string) => void;
@@ -51,7 +65,9 @@ export function ThreadList({
   labelId,
   search,
   title,
+  subtitle,
   labels,
+  ownMailboxes,
   openId,
   activeId,
   onActiveChange,
@@ -62,6 +78,7 @@ export function ThreadList({
   onClearSearch,
 }: ThreadListProps) {
   const { t, lang, online } = useApp();
+  const toast = useToast();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLLIElement>(null);
   const anchorRef = useRef<string | null>(null);
@@ -153,8 +170,44 @@ export function ThreadList({
   const allSelected = order.length > 0 && selectedIds.length === order.length;
   const someSelected = selectedIds.length > 0 && !allSelected;
 
-  const toggleAll = () => onSelectionChange(allSelected ? new Set() : new Set(order));
+  const toggleAll = () => onSelectionChange(allSelected || someSelected ? new Set() : new Set(order));
   const clear = () => onSelectionChange(new Set());
+
+  const pick = (filter: SelectFilter) => {
+    const ids = selectByFilter(threads, filter);
+    anchorRef.current = null;
+    onSelectionChange(new Set(ids));
+    if (filter !== 'none' && ids.length === 0) toast({ message: t('list.selectNoMatch') });
+  };
+
+  const selectItems: MenuItem[] = SELECT_FILTERS.map((f) => ({
+    id: `select-${f}`,
+    label: t(`list.select.${f}`),
+    disabled: f !== 'none' && order.length === 0,
+    onSelect: () => pick(f),
+  }));
+
+  const selectControl = (
+    <div className={styles.selectSplit}>
+      <Checkbox
+        className={styles.headerCheck}
+        label={t('list.selectAll')}
+        hideLabel
+        checked={allSelected}
+        indeterminate={someSelected}
+        disabled={order.length === 0}
+        onChange={toggleAll}
+      />
+      <Menu
+        label={t('list.selectMenu')}
+        icon="chevron-down"
+        size="sm"
+        align="start"
+        className={styles.selectMenu}
+        items={selectItems}
+      />
+    </div>
+  );
 
   const bulk = (fn: (ids: string[]) => void) => () => {
     const ids = selectedIds;
@@ -177,6 +230,7 @@ export function ThreadList({
       })
     : [{ id: 'none', label: t('list.noLabels'), disabled: true, onSelect: () => undefined }];
 
+  // Everything beyond archive / delete / read goes into "⋮" so the bar fits a 320px column.
   const moreItems: MenuItem[] = [
     {
       id: 'unread',
@@ -184,6 +238,9 @@ export function ThreadList({
       label: anyUnread ? t('list.markUnread') : t('list.markRead'),
       onSelect: bulk((ids) => actions.setRead(ids, !anyUnread)),
     },
+    ...(folder !== 'spam' && folder !== 'trash'
+      ? [{ id: 'spam', icon: 'alert' as const, label: t('list.spam'), onSelect: bulk((ids) => actions.spam(ids)) }]
+      : []),
     { id: 'sep1', separator: true },
     ...MOVE_TARGETS.filter((f) => f !== folder).map<MenuItem>((f) => ({
       id: `move-${f}`,
@@ -192,8 +249,26 @@ export function ThreadList({
       onSelect: bulk((ids) => actions.move(ids, f)),
     })),
     { id: 'sep2', separator: true },
+    ...labelItems.map<MenuItem>((item) =>
+      'separator' in item
+        ? item
+        : { ...item, icon: 'tag', label: item.disabled ? item.label : t('list.labelItem', { label: item.label }) },
+    ),
+    { id: 'sep3', separator: true },
     { id: 'clear', icon: 'x', label: t('list.clearSelection'), onSelect: clear },
   ];
+
+  /** "To" line for Sent / Drafts / Scheduled (see ThreadRow `recipients`). */
+  const toMode = showsRecipients(folder);
+  const recipientsFor = (th: ThreadSummary): string | null | undefined => {
+    if (!toMode) return undefined;
+    const fetched = data.extras[th.id]?.recipients;
+    if (fetched && fetched.length) return fetched.join(', ');
+    const others = otherParticipants(th.participants, ownMailboxes ?? []);
+    if (others.length && ownMailboxes) return others.join(', ');
+    if (fetched) return '';
+    return null;
+  };
 
   const onListKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Escape' && selection.size > 0) {
@@ -202,17 +277,19 @@ export function ThreadList({
     }
   };
 
-  const header =
-    selectedIds.length > 0 ? (
-      <div className={[styles.header, styles.bulk].join(' ')} role="toolbar" aria-label={t('list.bulkActions')}>
-        <Checkbox
-          className={styles.headerCheck}
-          label={t('list.selectAll')}
-          hideLabel
-          checked={allSelected}
-          indeterminate={someSelected}
-          onChange={toggleAll}
-        />
+  // One element for both states so the select control (and focus on its chevron) survives
+  // switching between the title header and the bulk bar.
+  const bulkMode = selectedIds.length > 0;
+  const showSelect = bulkMode || data.status !== 'ready' || order.length > 0;
+  const header = (
+    <div
+      className={[styles.header, bulkMode && styles.bulk].filter(Boolean).join(' ')}
+      role={bulkMode ? 'toolbar' : undefined}
+      aria-label={bulkMode ? t('list.bulkActions') : undefined}
+    >
+      {showSelect ? selectControl : null}
+      {bulkMode ? (
+        <>
         <span className={styles.bulkCount} aria-live="polite">
           <span className={styles.bulkCountLong}>{t('list.selected', { count: selectedIds.length })}</span>
           <span className={styles.bulkCountShort} aria-hidden="true">
@@ -220,43 +297,36 @@ export function ThreadList({
           </span>
         </span>
         <span className={styles.spacer} />
-        <IconButton
-          icon={primary.icon}
-          label={t(primary.labelKey, { folder: t('folder.inbox') })}
-          onClick={bulk((ids) => (primary.target === 'archive' ? actions.archive(ids) : actions.move(ids, primary.target)))}
-        />
-        <IconButton
-          icon="trash"
-          label={folder === 'trash' ? t('list.deleteForever') : t('list.delete')}
-          onClick={() => {
-            if (folder === 'trash') askDeleteForever(selectedIds);
-            else bulk((ids) => actions.trash(ids))();
-          }}
-        />
-        {folder !== 'spam' && folder !== 'trash' && (
-          <IconButton icon="alert" label={t('list.spam')} className={styles.wideOnly} onClick={bulk((ids) => actions.spam(ids))} />
-        )}
-        <IconButton
-          icon="check"
-          label={anyUnread ? t('list.markRead') : t('list.markUnread')}
-          onClick={bulk((ids) => actions.setRead(ids, anyUnread))}
-        />
-        <Menu label={t('list.labelsMenu')} icon="tag" items={labelItems} />
-        <Menu label={t('common.more')} items={moreItems} />
-      </div>
-    ) : (
-      <div className={styles.header}>
-        <Checkbox
-          className={styles.headerCheck}
-          label={t('list.selectAll')}
-          hideLabel
-          checked={false}
-          disabled={order.length === 0}
-          onChange={toggleAll}
-        />
-        <h1 className={styles.title} id={id ? `${id}-title` : undefined}>
-          {title}
-        </h1>
+        <div className={styles.bulkActions}>
+          <IconButton
+            icon={primary.icon}
+            label={t(primary.labelKey, { folder: t('folder.inbox') })}
+            onClick={bulk((ids) => (primary.target === 'archive' ? actions.archive(ids) : actions.move(ids, primary.target)))}
+          />
+          <IconButton
+            icon="trash"
+            label={folder === 'trash' ? t('list.deleteForever') : t('list.delete')}
+            onClick={() => {
+              if (folder === 'trash') askDeleteForever(selectedIds);
+              else bulk((ids) => actions.trash(ids))();
+            }}
+          />
+          <IconButton
+            icon={anyUnread ? 'check' : 'inbox'}
+            label={anyUnread ? t('list.markRead') : t('list.markUnread')}
+            onClick={bulk((ids) => actions.setRead(ids, anyUnread))}
+          />
+          <Menu label={t('common.more')} items={moreItems} />
+        </div>
+        </>
+      ) : (
+        <>
+        <div className={styles.titleBlock}>
+          <h1 className={styles.title} id={id ? `${id}-title` : undefined}>
+            {title}
+          </h1>
+          {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
+        </div>
         <span className={styles.spacer} />
         <IconButton
           icon="refresh"
@@ -266,8 +336,10 @@ export function ThreadList({
             data.refresh().catch(() => undefined);
           }}
         />
-      </div>
-    );
+        </>
+      )}
+    </div>
+  );
 
   let body;
   if (data.status === 'loading') {
@@ -341,6 +413,7 @@ export function ThreadList({
             selectionMode={selection.size > 0}
             labels={labelMap}
             extras={data.extras[th.id]}
+            recipients={recipientsFor(th)}
             lang={lang}
             t={t}
             cb={cb}

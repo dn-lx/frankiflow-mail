@@ -5,7 +5,7 @@ import { useApp } from '@/components/providers/AppProvider';
 import { useToast } from '@/components/ui';
 import type { Folder, Label, Message, MessagePatch } from '@/lib/backend/types';
 import { describeError } from '@/lib/i18n';
-import { groupBy, messagesToMove, staysInView, type ConcreteFolder } from '@/lib/mail/threads';
+import { groupBy, isConcreteFolder, messagesToMove, staysInView, type ConcreteFolder } from '@/lib/mail/threads';
 import type { ThreadListData } from './useThreadList';
 import './strings';
 
@@ -28,17 +28,37 @@ interface Options {
   labels: Label[];
   /** Called synchronously before threads disappear from the current view. */
   onRemoved: (ids: readonly string[]) => void;
+  /** Optimistic change of the sidebar unread counts (applied right away). */
+  onCountsDelta?: (delta: CountDelta) => void;
+  /** Called after every write (and undo) so the sidebar counts can refresh without delay. */
+  onWritten?: () => void;
 }
+
+export type CountDelta = Partial<Record<Folder, number>>;
 
 type Prev = { id: string; folder: Message['folder']; snoozedUntil: string | null };
 
-export function useThreadActions({ data, folder, labelId, labels, onRemoved }: Options): ThreadActions {
+/** Folders whose sidebar count is an unread count (drafts / scheduled show totals). */
+function unreadCounted(f: Folder): boolean {
+  return isConcreteFolder(f) && f !== 'drafts' && f !== 'scheduled';
+}
+
+export function useThreadActions({ data, folder, labelId, labels, onRemoved, onCountsDelta, onWritten }: Options): ThreadActions {
   const { backend, t, lang } = useApp();
   const toast = useToast();
 
   // Keep the latest values without re-creating the action functions.
-  const ref = useRef({ data, folder, labelId, labels, onRemoved, t, lang });
-  ref.current = { data, folder, labelId, labels, onRemoved, t, lang };
+  const ref = useRef({ data, folder, labelId, labels, onRemoved, onCountsDelta, onWritten, t, lang });
+  ref.current = { data, folder, labelId, labels, onRemoved, onCountsDelta, onWritten, t, lang };
+
+  const written = useCallback(() => ref.current.onWritten?.(), []);
+  const countDelta = useCallback((delta: CountDelta) => {
+    if (Object.values(delta).some((v) => v)) ref.current.onCountsDelta?.(delta);
+  }, []);
+  const unreadOf = useCallback((ids: readonly string[]) => {
+    const set = new Set(ids);
+    return ref.current.data.threads.reduce((n, th) => (set.has(th.id) ? n + th.unreadCount : n), 0);
+  }, []);
 
   const countText = useCallback((n: number) => (n === 1 ? ref.current.t('list.conversation') : ref.current.t('list.conversations', { count: n })), []);
 
@@ -61,6 +81,14 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
       const { data: d, folder: view } = ref.current;
       const dest: ConcreteFolder = target === 'snooze' ? 'snoozed' : target;
       const removes = !staysInView(view, dest);
+      // Sidebar counts move with the threads right away (the fetch after the write corrects them).
+      const unread = unreadOf(ids);
+      const delta: CountDelta = {};
+      if (unread > 0 && unreadCounted(view) && view !== dest) {
+        delta[view] = -unread;
+        if (unreadCounted(dest)) delta[dest] = unread;
+      }
+      countDelta(delta);
       if (removes) ref.current.onRemoved(ids);
       const unhide = removes ? d.hide(ids) : () => undefined;
       let undone = false;
@@ -80,6 +108,7 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
 
       work.then(
         async () => {
+          written();
           if (undone) return;
           await ref.current.data.refresh().catch(() => undefined);
           unhide();
@@ -87,6 +116,7 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
         (err: unknown) => {
           unhide();
           fail(err);
+          written();
           ref.current.data.refresh().catch(() => undefined);
         },
       );
@@ -98,6 +128,9 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
         onAction: () => {
           undone = true;
           unhide();
+          const back: CountDelta = {};
+          for (const [k, v] of Object.entries(delta) as [Folder, number][]) back[k] = -v;
+          countDelta(back);
           void (async () => {
             try {
               const prev = await work;
@@ -113,13 +146,14 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
             } catch (err) {
               fail(err, 'list.undoFailed');
             } finally {
+              written();
               ref.current.data.refresh().catch(() => undefined);
             }
           })();
         },
       });
     },
-    [backend, fail, loadThreads, toast],
+    [backend, countDelta, fail, loadThreads, toast, unreadOf, written],
   );
 
   const archive = useCallback(
@@ -161,7 +195,14 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
     (ids: readonly string[], read: boolean) => {
       if (ids.length === 0) return;
       const d = ref.current.data;
+      const view = ref.current.folder;
       const threads = d.threads.filter((th) => ids.includes(th.id));
+      if (unreadCounted(view)) {
+        const change = read ? -unreadOf(ids) : threads.filter((th) => th.unreadCount === 0).length;
+        const delta: CountDelta = {};
+        delta[view] = change;
+        countDelta(delta);
+      }
       const clear = d.override(ids, (th) => ({ unreadCount: read ? 0 : Math.max(1, th.unreadCount) }));
       void (async () => {
         try {
@@ -175,15 +216,17 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
             );
           }
           toast({ message: ref.current.t(read ? 'list.done.read' : 'list.done.unread') });
+          written();
           await ref.current.data.refresh().catch(() => undefined);
         } catch (err) {
           fail(err);
+          written();
         } finally {
           clear();
         }
       })();
     },
-    [backend, fail, loadThreads, toast],
+    [backend, countDelta, fail, loadThreads, toast, unreadOf, written],
   );
 
   const setStarred = useCallback(
@@ -205,6 +248,7 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
             const msgs = (await loadThreads(ids)).filter((m) => m.isStarred);
             if (msgs.length) await backend.updateMessages(msgs.map((m) => m.id), { isStarred: false });
           }
+          written();
           await ref.current.data.refresh().catch(() => undefined);
         } catch (err) {
           fail(err);
@@ -213,7 +257,7 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
         }
       })();
     },
-    [backend, fail, loadThreads],
+    [backend, fail, loadThreads, written],
   );
 
   const setLabel = useCallback(
@@ -238,6 +282,7 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
       })();
       work.then(
         async () => {
+          written();
           if (undone) return;
           await ref.current.data.refresh().catch(() => undefined);
           clear();
@@ -271,7 +316,7 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
         },
       });
     },
-    [backend, fail, loadThreads, toast],
+    [backend, fail, loadThreads, toast, written],
   );
 
   const deleteForever = useCallback(
@@ -284,6 +329,7 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
         const msgs = (await loadThreads(ids)).filter((m) => m.folder === 'trash' || m.folder === 'spam');
         if (msgs.length) await backend.deleteForever(msgs.map((m) => m.id));
         toast({ tone: 'success', message: ref.current.t('list.done.deleted', { count: countText(ids.length) }) });
+        written();
         await ref.current.data.refresh().catch(() => undefined);
       } catch (err) {
         fail(err);
@@ -291,7 +337,7 @@ export function useThreadActions({ data, folder, labelId, labels, onRemoved }: O
         unhide();
       }
     },
-    [backend, countText, fail, loadThreads, toast],
+    [backend, countText, fail, loadThreads, toast, written],
   );
 
   return useMemo(

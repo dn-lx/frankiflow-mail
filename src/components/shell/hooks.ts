@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useApp } from '@/components/providers/AppProvider';
 import type { Folder, Label, Mailbox } from '@/lib/backend/types';
 
@@ -83,11 +83,30 @@ export function useMailMeta(): MailMeta {
 
 export type Counts = Partial<Record<Folder, number>>;
 
+export interface CountsState {
+  counts: Counts;
+  /** Re-fetches right away (after a write), without waiting for the change event. */
+  reload: () => void;
+  /** Applies an optimistic delta until the next fetch replaces it. */
+  adjust: (delta: Counts) => void;
+}
+
 /** Unread counts per folder (drafts / scheduled: totals), refreshed on changes. */
-export function useCounts(mailboxId: string | undefined): Counts {
+export function useCounts(mailboxId: string | undefined): CountsState {
   const { backend } = useApp();
   const [counts, setCounts] = useState<Counts>({});
   const reqRef = useRef(0);
+
+  const adjust = useCallback((delta: Counts) => {
+    setCounts((cur) => {
+      const next: Counts = { ...cur };
+      for (const [k, v] of Object.entries(delta) as [Folder, number][]) {
+        if (!v) continue;
+        next[k] = Math.max(0, (next[k] ?? 0) + v);
+      }
+      return next;
+    });
+  }, []);
 
   const reload = useCallback(() => {
     const id = ++reqRef.current;
@@ -105,7 +124,7 @@ export function useCounts(mailboxId: string | undefined): Counts {
   }, [reload]);
   useBackendChange(reload, 500);
 
-  return counts;
+  return useMemo(() => ({ counts, reload, adjust }), [counts, reload, adjust]);
 }
 
 const WIDTH_KEY = 'ffmail.listWidth';

@@ -11,6 +11,7 @@ import {
   toasts,
   waitForList,
 } from './fixtures';
+import type { Page } from '@playwright/test';
 
 test.describe('E-Mail-Liste', () => {
   test.beforeEach(async ({ page }) => {
@@ -137,6 +138,78 @@ test.describe('E-Mail-Liste', () => {
 
     await expect(page).toHaveURL(new RegExp(`[?&]t=${secondId}(&|$)`));
     await expect(threadRows(page).nth(1).locator('a[data-thread-link]')).toHaveAttribute('aria-current', 'true');
+  });
+
+  test.describe('Auswahlmenü (Kopfzeile der Liste)', () => {
+    async function rowStates(page: Page) {
+      const rows = threadRows(page);
+      const n = await rows.count();
+      const out: { checked: boolean; unread: boolean; starred: boolean }[] = [];
+      for (let i = 0; i < n; i++) {
+        const row = rows.nth(i);
+        out.push({
+          checked: await row.getByRole('checkbox').isChecked(),
+          unread: ((await row.locator('a[data-thread-link]').textContent()) ?? '').includes('Ungelesen,'),
+          starred: (await row.getByRole('button', { name: /^Markier/ }).first().getAttribute('aria-pressed')) === 'true',
+        });
+      }
+      return out;
+    }
+
+    async function choose(page: Page, item: string) {
+      const chevron = page.locator('#mail-list').getByRole('button', { name: 'Auswahl', exact: true });
+      await chevron.click();
+      const menu = page.getByRole('menu');
+      await expect(menu).toBeVisible();
+      await menu.getByRole('menuitem', { name: item, exact: true }).click();
+      await expect(menu).toBeHidden();
+      // Focus goes back to the chevron.
+      await expect(chevron).toBeFocused();
+    }
+
+    test('Ungelesen wählt genau die ungelesenen Zeilen, Keine hebt die Auswahl auf', async ({ page }) => {
+      await expect(threadRows(page).first()).toBeVisible();
+      const bulk = page.getByRole('toolbar', { name: 'Aktionen für Auswahl' });
+
+      await choose(page, 'Ungelesen');
+      const states = await rowStates(page);
+      expect(states.some((s) => s.unread)).toBe(true);
+      for (const s of states) expect(s.checked).toBe(s.unread);
+      await expect(bulk).toBeVisible();
+
+      await choose(page, 'Keine');
+      for (const s of await rowStates(page)) expect(s.checked).toBe(false);
+      await expect(bulk).toBeHidden();
+    });
+
+    test('Checkbox wählt alle Zeilen und ist dann angehakt', async ({ page }) => {
+      await expect(threadRows(page).first()).toBeVisible();
+      const all = page.locator('#mail-list').getByRole('checkbox', { name: 'Alle auswählen', exact: true });
+      await all.click();
+      await expect(all).toBeChecked();
+      for (const s of await rowStates(page)) expect(s.checked).toBe(true);
+      await expect(page.getByRole('toolbar', { name: 'Aktionen für Auswahl' })).toBeVisible();
+
+      await all.click();
+      await expect(all).not.toBeChecked();
+      for (const s of await rowStates(page)) expect(s.checked).toBe(false);
+    });
+
+    test('Markiert wählt nur die markierten Zeilen', async ({ page }) => {
+      await expect(threadRows(page).first()).toBeVisible();
+      // Make sure at least one row is starred.
+      const first = threadRows(page).first();
+      const star = first.getByRole('button', { name: 'Markieren', exact: true });
+      if (await star.count()) {
+        await star.click();
+        await expect(first.getByRole('button', { name: 'Markierung entfernen', exact: true })).toHaveAttribute('aria-pressed', 'true');
+      }
+
+      await choose(page, 'Markiert');
+      const states = await rowStates(page);
+      expect(states.some((s) => s.starred)).toBe(true);
+      for (const s of states) expect(s.checked).toBe(s.starred);
+    });
   });
 
   test('? öffnet die Tastenkürzel-Hilfe', async ({ page }) => {

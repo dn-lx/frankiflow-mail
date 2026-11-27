@@ -62,9 +62,10 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
     [mailboxId, view.folder, view.labelId, view.search],
   );
   const queryKey = `${mailboxId ?? ''}|${view.folder}|${view.labelId ?? ''}|${view.search ?? ''}`;
-  const data = useThreadList(query);
   const meta = useMailMeta();
-  const counts = useCounts(mailboxId);
+  const data = useThreadList(query, meta.mailboxes);
+  const countsState = useCounts(mailboxId);
+  const counts = countsState.counts;
 
   const [selection, setSelection] = useState<Set<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string | undefined>(view.threadId);
@@ -74,7 +75,8 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
   const [dragging, setDragging] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const drawerRef = useRef<HTMLDivElement>(null);
+  const foldersButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
   const openedFromList = useRef(false);
 
   const order = useMemo(() => data.threads.map((th) => th.id), [data.threads]);
@@ -91,7 +93,8 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
   const drawerMode = !isDesktop;
 
   // Latest values for stable callbacks and the global key handler.
-  const s = { view, navigate, order, activeId, selection, isPhone, data, reading, drawerOpen, drawerMode };
+  const reloadCounts = countsState.reload;
+  const s = { view, navigate, order, activeId, selection, isPhone, data, reading, drawerOpen, drawerMode, reloadCounts };
   const sRef = useRef(s);
   sRef.current = s;
 
@@ -104,7 +107,15 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
     if (cur.activeId && ids.includes(cur.activeId)) setActiveId(next);
   }, []);
 
-  const actions = useThreadActions({ data, folder: view.folder, labelId: view.labelId, labels: meta.labels, onRemoved });
+  const actions = useThreadActions({
+    data,
+    folder: view.folder,
+    labelId: view.labelId,
+    labels: meta.labels,
+    onRemoved,
+    onCountsDelta: countsState.adjust,
+    onWritten: countsState.reload,
+  });
 
   const composerRef = useRef(composer);
   composerRef.current = composer;
@@ -166,6 +177,7 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
     const id = cur.view.threadId;
     if (!id) return;
     onRemoved([id]);
+    cur.reloadCounts();
     const unhide = cur.data.hide([id]);
     cur.data
       .refresh()
@@ -316,6 +328,8 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
   const labelName = view.labelId ? meta.labels.find((l) => l.id === view.labelId)?.name : undefined;
   const folderName = labelName ?? t(`folder.${view.folder}`);
   const listTitle = view.search ? `${t('shell.searchResults')} · ${folderName}` : folderName;
+  const activeMailbox = mailboxId ? meta.mailboxes?.find((m) => m.id === mailboxId) : undefined;
+  const activeMailboxText = activeMailbox ? t('shell.activeMailbox', { mailbox: activeMailbox.address }) : '';
   const inboxUnread = counts.inbox ?? 0;
   const docTitle = inboxUnread > 0 ? t('shell.titleUnread', { count: inboxUnread, folder: folderName }) : t('shell.title', { folder: folderName });
   useEffect(() => {
@@ -341,9 +355,10 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
   }, [drawerOpen]);
   const closeDrawer = useCallback(() => {
     setDrawerOpen(false);
-    window.setTimeout(() => menuButtonRef.current?.focus(), 0);
+    // Back to whichever button opened it (top bar on tablet, bottom bar on phones).
+    window.setTimeout(() => (menuButtonRef.current ?? foldersButtonRef.current)?.focus(), 0);
   }, []);
-  const onDrawerKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+  const onDrawerKeyDown = (e: ReactKeyboardEvent<HTMLElement>) => {
     if (e.key === 'Escape' && drawerOpen && !isDesktop && !e.defaultPrevented) {
       e.preventDefault();
       closeDrawer();
@@ -372,13 +387,15 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
         {t('shell.skipToList')}
       </a>
 
-      <div
+      {/* Landmark: complementary on desktop, a modal dialog while it is the drawer. */}
+      <aside
         id="mail-sidebar"
         ref={drawerRef}
         className={[styles.sidebarWrap, drawerMode && styles.drawer, drawerMode && drawerOpen && styles.drawerOpen].filter(Boolean).join(' ')}
         inert={drawerMode && !drawerOpen}
         onKeyDown={onDrawerKeyDown}
-        {...(drawerMode ? { role: 'dialog', 'aria-modal': drawerOpen, 'aria-label': t('shell.nav') } : {})}
+        aria-label={t('shell.nav')}
+        {...(drawerMode ? { role: 'dialog', 'aria-modal': drawerOpen } : {})}
       >
         <Sidebar
           view={view}
@@ -392,7 +409,7 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
           onCompose={compose}
           onClose={drawerMode ? closeDrawer : undefined}
         />
-      </div>
+      </aside>
       {drawerMode && drawerOpen && <div className={styles.scrim} aria-hidden="true" onClick={closeDrawer} />}
 
       <main className={styles.main} inert={drawerMode && drawerOpen}>
@@ -401,11 +418,14 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
             query={view.search ?? ''}
             onSearch={onSearch}
             inputRef={searchRef}
-            showMenuButton={drawerMode}
+            showMenuButton={drawerMode && !isPhone}
             menuOpen={drawerOpen}
             onOpenMenu={() => setDrawerOpen(true)}
             menuButtonRef={menuButtonRef}
             onHelp={() => setHelpOpen(true)}
+            onCompose={drawerMode && !isPhone ? compose : undefined}
+            compact={isPhone}
+            hideDemo={drawerMode && drawerOpen}
           />
         )}
         <div className={styles.panes}>
@@ -418,7 +438,9 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
               labelId={view.labelId}
               search={view.search}
               title={listTitle}
+              subtitle={activeMailbox ? activeMailboxText : undefined}
               labels={meta.labels}
+              ownMailboxes={meta.mailboxes}
               openId={view.threadId}
               activeId={activeId}
               onActiveChange={setActiveId}
@@ -463,7 +485,7 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
           <Link
             href={hrefFor({ folder: 'inbox', labelId: null, search: null, threadId: null })}
             className={styles.bottomItem}
-            aria-current={view.folder === 'inbox' && !view.labelId ? 'page' : undefined}
+            aria-current={view.folder === 'inbox' && !view.labelId && !view.search ? 'page' : undefined}
           >
             <span className={styles.bottomIcon}>
               <Icon name="inbox" size={22} />
@@ -476,7 +498,12 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
             <span>{t('folder.inbox')}</span>
             {inboxUnread > 0 && <span className="sr-only">, {t('shell.unreadCount', { count: inboxUnread })}</span>}
           </Link>
-          <button type="button" className={styles.bottomItem} onClick={focusSearch}>
+          <button
+            type="button"
+            className={styles.bottomItem}
+            aria-current={view.search ? 'page' : undefined}
+            onClick={focusSearch}
+          >
             <Icon name="search" size={22} />
             <span>{t('shell.search')}</span>
           </button>
@@ -487,6 +514,7 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
             <span>{t('shell.compose')}</span>
           </button>
           <button
+            ref={foldersButtonRef}
             type="button"
             className={styles.bottomItem}
             aria-expanded={drawerOpen}
@@ -494,7 +522,10 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
             onClick={() => setDrawerOpen(true)}
           >
             <Icon name="menu" size={22} />
-            <span>{t('shell.folders')}</span>
+            <span>
+              {t('shell.folders')}
+              <span className="sr-only"> – {t('shell.openMenu')}</span>
+            </span>
           </button>
         </nav>
       )}

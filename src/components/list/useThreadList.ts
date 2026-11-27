@@ -4,7 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '@/components/providers/AppProvider';
 import type { Folder, ThreadSummary } from '@/lib/backend/types';
 import { describeError } from '@/lib/i18n';
-import { appendThreads, compareThreads, mergeThreads } from '@/lib/mail/threads';
+import {
+  appendThreads,
+  compareThreads,
+  mergeThreads,
+  otherParticipants,
+  outboundRecipients,
+  showsRecipients,
+  type OwnIdentity,
+} from '@/lib/mail/threads';
 
 export const PAGE_SIZE = 50;
 const MAX_REFRESH = 500;
@@ -21,6 +29,8 @@ export interface ThreadExtras {
   snoozedUntil?: string;
   scheduledAt?: string;
   isDraft?: boolean;
+  /** Recipients of the latest outbound / draft message (Sent, Drafts, Scheduled). */
+  recipients?: string[];
 }
 
 export type ListStatus = 'loading' | 'ready' | 'error';
@@ -54,7 +64,11 @@ interface Layer {
 
 let layerToken = 0;
 
-export function useThreadList(query: ThreadListQuery): ThreadListData {
+/**
+ * @param own The user's mailboxes (from `backend.listMailboxes()`); used to tell
+ * recipients from the user in Sent / Drafts / Scheduled. `null` while loading.
+ */
+export function useThreadList(query: ThreadListQuery, own: readonly OwnIdentity[] | null = null): ThreadListData {
   const { backend, lang } = useApp();
   const [base, setBase] = useState<ThreadSummary[]>([]);
   const [status, setStatus] = useState<ListStatus>('loading');
@@ -191,12 +205,22 @@ export function useThreadList(query: ThreadListQuery): ThreadListData {
   }, [backend, refresh]);
 
   // Snooze / schedule times are not in ThreadSummary: fetch them for the (small) Snoozed and Scheduled lists.
-  const needsExtras = query.folder === 'snoozed' || query.folder === 'scheduled';
+  // Sent / Drafts / Scheduled rows show recipients: fetched only when the summary's participants
+  // contain nobody but the user's own mailboxes.
+  const needsTimes = query.folder === 'snoozed' || query.folder === 'scheduled';
+  const needsRecipients = showsRecipients(query.folder);
+  const needsExtras = needsTimes || needsRecipients;
   const extrasKeys = useRef(new Map<string, string>());
   useEffect(() => {
     if (!needsExtras) return;
+    // Wait for the own mailboxes, otherwise every row would look like it needs a fetch.
+    if (needsRecipients && !needsTimes && !own) return;
     const g = gen.current;
-    const todo = base.filter((t) => extrasKeys.current.get(t.id) !== `${t.latestMessageId}|${t.lastMessageAt}`);
+    const todo = base.filter((t) => {
+      if (extrasKeys.current.get(t.id) === `${t.latestMessageId}|${t.lastMessageAt}`) return false;
+      if (needsTimes) return true;
+      return otherParticipants(t.participants, own ?? []).length === 0;
+    });
     if (todo.length === 0) return;
     for (const t of todo) extrasKeys.current.set(t.id, `${t.latestMessageId}|${t.lastMessageAt}`);
     void Promise.all(
@@ -205,7 +229,9 @@ export function useThreadList(query: ThreadListQuery): ThreadListData {
           (msgs) => {
             const snoozed = msgs.filter((m) => m.snoozedUntil).map((m) => m.snoozedUntil as string).sort();
             const scheduled = msgs.filter((m) => m.scheduledAt).map((m) => m.scheduledAt as string).sort();
-            return [t.id, { snoozedUntil: snoozed[snoozed.length - 1], scheduledAt: scheduled[0] }] as const;
+            const ex: ThreadExtras = { snoozedUntil: snoozed[snoozed.length - 1], scheduledAt: scheduled[0] };
+            if (needsRecipients) ex.recipients = outboundRecipients(msgs);
+            return [t.id, ex] as const;
           },
           () => {
             extrasKeys.current.delete(t.id);
@@ -223,7 +249,7 @@ export function useThreadList(query: ThreadListQuery): ThreadListData {
         return next;
       });
     });
-  }, [base, needsExtras, backend]);
+  }, [base, needsExtras, needsTimes, needsRecipients, own, backend]);
   useEffect(() => {
     extrasKeys.current = new Map();
   }, [key]);

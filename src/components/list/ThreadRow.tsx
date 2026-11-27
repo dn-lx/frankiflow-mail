@@ -31,6 +31,11 @@ export interface ThreadRowProps {
   selectionMode: boolean;
   labels: ReadonlyMap<string, Label>;
   extras?: ThreadExtras;
+  /**
+   * Sent / Drafts / Scheduled: recipients shown as "To: …" instead of the sender.
+   * undefined = show the sender; null = not known yet; '' = no recipient.
+   */
+  recipients?: string | null;
   lang: Lang;
   t: (key: string, vars?: Record<string, string | number>) => string;
   cb: RowCallbacks;
@@ -56,12 +61,35 @@ function shortDateTime(iso: string, lang: Lang): string {
   }).format(d);
 }
 
-function ThreadRowImpl({ thread, href, folder, active, open, selected, selectionMode, labels, extras, lang, t, cb }: ThreadRowProps) {
+function ThreadRowImpl({
+  thread,
+  href,
+  folder,
+  active,
+  open,
+  selected,
+  selectionMode,
+  labels,
+  extras,
+  recipients,
+  lang,
+  t,
+  cb,
+}: ThreadRowProps) {
   const rowRef = useRef<HTMLLIElement>(null);
   const unread = thread.unreadCount > 0;
   const subject = thread.subject.trim() || t('list.noSubject');
-  const sender = thread.participants.length ? thread.participants.join(', ') : t('list.me');
-  const firstName = thread.participants[0] ?? '';
+  const toMode = recipients !== undefined;
+  const sender = toMode
+    ? recipients === null
+      ? t('list.to', { names: '…' })
+      : recipients === ''
+        ? t('list.noRecipient')
+        : t('list.to', { names: recipients })
+    : thread.participants.length
+      ? thread.participants.join(', ')
+      : t('list.me');
+  const firstName = toMode ? (recipients ? (recipients.split(', ')[0] ?? '') : '') : (thread.participants[0] ?? '');
   const trashLike = folder === 'trash';
 
   // Roving tab stop: only the active row's controls are in the tab order.
@@ -149,6 +177,7 @@ function ThreadRowImpl({ thread, href, folder, active, open, selected, selection
         open && styles.open,
         active && styles.active,
         selectionMode && styles.selectionMode,
+        canSnooze ? styles.hover4 : styles.hover3,
       ]
         .filter(Boolean)
         .join(' ')}
@@ -247,22 +276,25 @@ function ThreadRowImpl({ thread, href, folder, active, open, selected, selection
         </div>
       </div>
 
-      <div className={styles.hoverActions}>
-        <IconButton icon={primary.icon} label={primaryLabel} size="sm" onClick={() => cb.archive(thread.id)} />
-        <IconButton
-          icon="trash"
-          label={trashLike ? t('list.deleteForever') : t('list.delete')}
-          size="sm"
-          onClick={() => cb.trash(thread.id)}
-        />
-        <IconButton
-          icon={unread ? 'check' : 'inbox'}
-          label={unread ? t('list.markRead') : t('list.markUnread')}
-          size="sm"
-          onClick={() => cb.setRead(thread.id, unread)}
-        />
-        {canSnooze && <SnoozeMenu size="sm" onPick={(iso) => cb.snooze(thread.id, iso)} />}
-      </div>
+      {/* Per-row hover actions; not while several rows are selected (the bulk bar acts then). */}
+      {!selectionMode && (
+        <div className={styles.hoverActions}>
+          <IconButton icon={primary.icon} label={primaryLabel} size="sm" onClick={() => cb.archive(thread.id)} />
+          <IconButton
+            icon="trash"
+            label={trashLike ? t('list.deleteForever') : t('list.delete')}
+            size="sm"
+            onClick={() => cb.trash(thread.id)}
+          />
+          <IconButton
+            icon={unread ? 'check' : 'inbox'}
+            label={unread ? t('list.markRead') : t('list.markUnread')}
+            size="sm"
+            onClick={() => cb.setRead(thread.id, unread)}
+          />
+          {canSnooze && <SnoozeMenu size="sm" onPick={(iso) => cb.snooze(thread.id, iso)} />}
+        </div>
+      )}
     </li>
   );
 }
