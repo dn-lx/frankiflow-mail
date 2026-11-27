@@ -30,7 +30,7 @@ const { JSDOM } = jsdom;
 /* ------------------------------------------------------------------ */
 
 const dom = new JSDOM('');
-const win = dom.window as unknown as Window;
+const win = dom.window as unknown as Window & typeof globalThis;
 const env: HtmlEnv = { win, purify: DOMPurify(win) };
 const kit = createHtmlKit(env);
 

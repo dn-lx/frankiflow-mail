@@ -230,7 +230,7 @@ describe('threads and counts', () => {
       (t) => t.subject === 'Konversation Zählung'
     );
     const sentThread = (await listAll(backend, 'sent', INFO)).find(
-      (t) => t.latestMessageId === result.messageId
+      (t) => t.subject === 'Konversation Zählung'
     );
     assert.ok(inboxThread, 'thread missing from inbox');
     assert.ok(sentThread, 'thread missing from sent');

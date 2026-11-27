@@ -10,7 +10,7 @@ import { formatAddress } from '../../lib/mail/addresses.ts';
 export type Purifier = Pick<ReturnType<typeof DOMPurify>, 'sanitize'>;
 
 export interface HtmlEnv {
-  win: Window;
+  win: Window & typeof globalThis;
   purify: Purifier;
 }
 

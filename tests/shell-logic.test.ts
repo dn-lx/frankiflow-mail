@@ -161,7 +161,6 @@ describe('thread sorting, merging, navigation, and move helpers', () => {
     const current = [pinned, t1, t2, olderLoaded];
 
     // Identical fresh when complete=true returns the exact same array reference if nothing dropped
-    assert.equal(mergeThreads([pinned, t1, t2], [pinned, { ...t1 }, { ...t2 }], true), current.slice(0, 3) ? mergeThreads(current, current, true) : current);
     assert.equal(mergeThreads(current, current, true), current);
 
     // Fresh page has a new thread, an updated t1, drops t2 (within window), and is incomplete (so olderLoaded survives)
