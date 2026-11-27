@@ -12,6 +12,7 @@
   white-space: nowrap;
   text-decoration: none;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
   transition:
     background-color var(--duration-fast) var(--ease),
     border-color var(--duration-fast) var(--ease),
@@ -48,10 +49,6 @@
   color: var(--color-on-accent);
 }
 
-.primary:hover:not(:disabled) {
-  background: var(--color-accent-hover);
-}
-
 .primary:active:not(:disabled) {
   background: var(--color-accent-active);
 }
@@ -60,10 +57,6 @@
   background: var(--color-surface);
   color: var(--color-text);
   border-color: var(--color-border-strong);
-}
-
-.secondary:hover:not(:disabled) {
-  background: var(--color-surface-hover);
 }
 
 .secondary:active:not(:disabled) {
@@ -75,10 +68,6 @@
   color: var(--color-text);
 }
 
-.ghost:hover:not(:disabled) {
-  background: var(--color-surface-hover);
-}
-
 .ghost:active:not(:disabled) {
   background: var(--color-surface-2);
 }
@@ -88,8 +77,43 @@
   color: var(--color-on-danger);
 }
 
-.danger:hover:not(:disabled) {
+.danger:active:not(:disabled) {
   background: var(--color-danger-hover);
+}
+
+/* Hover only on devices that really hover: no sticky highlight after a tap. */
+@media (hover: hover) {
+  .primary:hover:not(:disabled) {
+    background: var(--color-accent-hover);
+  }
+
+  .primary:active:not(:disabled) {
+    background: var(--color-accent-active);
+  }
+
+  .secondary:hover:not(:disabled) {
+    background: var(--color-surface-hover);
+  }
+
+  .secondary:active:not(:disabled) {
+    background: var(--color-surface-2);
+  }
+
+  .ghost:hover:not(:disabled) {
+    background: var(--color-surface-hover);
+  }
+
+  .ghost:active:not(:disabled) {
+    background: var(--color-surface-2);
+  }
+
+  .danger:hover:not(:disabled) {
+    background: var(--color-danger-hover);
+  }
+
+  .ghost.iconButton:hover:not(:disabled) {
+    color: var(--color-text);
+  }
 }
 
 /* Icon-only buttons (IconButton) */
@@ -107,12 +131,14 @@
   height: var(--control-height-sm);
 }
 
-.ghost.iconButton {
-  color: var(--color-text-secondary);
+/* IconButton with a visible label (showLabel). */
+.iconButton.withLabel {
+  width: auto;
+  padding: 0 var(--space-3) 0 var(--space-2);
 }
 
-.ghost.iconButton:hover:not(:disabled) {
-  color: var(--color-text);
+.ghost.iconButton {
+  color: var(--color-text-secondary);
 }
 
 .iconButton[aria-pressed="true"] {
@@ -130,5 +156,10 @@
   .iconButton {
     width: 44px;
     height: 44px;
+  }
+
+  .iconButton.withLabel {
+    width: auto;
+    min-width: 44px;
   }
 }

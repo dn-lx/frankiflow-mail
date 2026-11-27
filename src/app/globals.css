@@ -134,6 +134,15 @@ dialog {
   color: inherit;
 }
 
+/*
+ * Toasts on phones sit 16px above the bottom edge; only when the mail shell
+ * shows its phone bottom navigation are they raised above it. The shell can
+ * override this by setting --toast-offset on <html>.
+ */
+:root:has([data-layout="phone"] > nav) {
+  --toast-offset: calc(env(safe-area-inset-bottom) + 57px + 16px);
+}
+
 /* Focus: visible ring for keyboard users only */
 :focus {
   outline: none;

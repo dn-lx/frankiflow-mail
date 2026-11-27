@@ -38,9 +38,38 @@
   margin-bottom: var(--space-2);
 }
 
+/* Online: wrappers do not exist for layout. */
+.frameOnline,
+.appOnline {
+  display: contents;
+}
+
+/*
+ * Offline: banner on top in normal flow, the app fills the remaining height.
+ * `contain: layout` makes the app area the containing block for fixed-position
+ * descendants (the mail shell uses `position: fixed; inset: 0`), so the shell,
+ * drawers and toasts all sit below the banner and the whole thing still fits
+ * the viewport. Modal dialogs live in the top layer and are unaffected.
+ */
+.frameOffline {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.appOffline {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  contain: layout;
+}
+
 .offline {
-  position: sticky;
-  top: 0;
+  position: relative;
+  flex: none;
   z-index: var(--z-banner);
   display: flex;
   align-items: center;

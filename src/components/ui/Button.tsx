@@ -34,7 +34,14 @@ export function Button({
     .filter(Boolean)
     .join(' ');
   return (
-    <button {...rest} type={type} className={cls} disabled={disabled || loading} aria-busy={loading || undefined}>
+    <button
+      data-variant={variant}
+      {...rest}
+      type={type}
+      className={cls}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+    >
       {loading ? <Spinner size="sm" /> : icon ? <Icon name={icon} size={size === 'sm' ? 16 : 18} /> : null}
       {children != null && <span className={styles.label}>{children}</span>}
       {iconEnd && !loading && <Icon name={iconEnd} size={size === 'sm' ? 16 : 18} />}

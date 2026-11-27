@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, type ReactNode, type MouseEvent, type SyntheticEvent } from 'react';
 import { IconButton } from './IconButton';
+import { useOptionalApp } from '../providers/AppProvider';
 import styles from './Dialog.module.css';
 
 export interface DialogProps {
@@ -33,10 +34,12 @@ export function Dialog({
   children,
   footer,
   size = 'md',
-  closeLabel = 'Schließen',
+  closeLabel,
   dismissOnBackdrop = true,
   className,
 }: DialogProps) {
+  const app = useOptionalApp();
+  const closeText = closeLabel ?? (app ? app.t('common.close') : 'Schließen');
   const ref = useRef<HTMLDialogElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const titleId = useId();
@@ -81,7 +84,7 @@ export function Dialog({
             <h2 id={titleId} className={styles.title}>
               {title}
             </h2>
-            <IconButton icon="x" label={closeLabel} onClick={onClose} />
+            <IconButton icon="x" label={closeText}onClick={onClose} />
           </header>
           {description && (
             <p id={descId} className={styles.description}>

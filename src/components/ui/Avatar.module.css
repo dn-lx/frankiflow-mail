@@ -33,9 +33,9 @@
 }
 
 .md {
-  width: 36px;
-  height: 36px;
-  font-size: var(--font-size-sm);
+  width: var(--avatar-size-md, 36px);
+  height: var(--avatar-size-md, 36px);
+  font-size: var(--avatar-font-md, var(--font-size-sm));
 }
 
 .lg {
