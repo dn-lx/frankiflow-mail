@@ -140,75 +140,113 @@ test.describe('E-Mail-Liste', () => {
     await expect(threadRows(page).nth(1).locator('a[data-thread-link]')).toHaveAttribute('aria-current', 'true');
   });
 
-  test.describe('Auswahlmenü (Kopfzeile der Liste)', () => {
-    async function rowStates(page: Page) {
-      const rows = threadRows(page);
-      const n = await rows.count();
-      const out: { checked: boolean; unread: boolean; starred: boolean }[] = [];
-      for (let i = 0; i < n; i++) {
-        const row = rows.nth(i);
-        out.push({
-          checked: await row.getByRole('checkbox').isChecked(),
-          unread: ((await row.locator('a[data-thread-link]').textContent()) ?? '').includes('Ungelesen,'),
-          starred: (await row.getByRole('button', { name: /^Markier/ }).first().getAttribute('aria-pressed')) === 'true',
-        });
-      }
-      return out;
-    }
-
+  test.describe('Filtermenü (Kopfzeile der Liste)', () => {
     async function choose(page: Page, item: string) {
-      const chevron = page.locator('#mail-list').getByRole('button', { name: 'Auswahl', exact: true });
+      const chevron = page.locator('#mail-list').getByRole('button', { name: 'Filter', exact: true });
       await chevron.click();
       const menu = page.getByRole('menu');
       await expect(menu).toBeVisible();
-      await menu.getByRole('menuitem', { name: item, exact: true }).click();
+      await menu.getByRole('menuitemradio', { name: item, exact: true }).click();
       await expect(menu).toBeHidden();
-      // Focus goes back to the chevron.
       await expect(chevron).toBeFocused();
+      await waitForList(page);
     }
 
-    test('Ungelesen wählt genau die ungelesenen Zeilen, Keine hebt die Auswahl auf', async ({ page }) => {
-      await expect(threadRows(page).first()).toBeVisible();
-      const bulk = page.getByRole('toolbar', { name: 'Aktionen für Auswahl' });
+    test('Menü zeigt Alle, Ungelesen, Gelesen, Markiert, Nicht markiert (ohne Keine)', async ({ page }) => {
+      const chevron = page.locator('#mail-list').getByRole('button', { name: 'Filter', exact: true });
+      await chevron.click();
+      const menu = page.getByRole('menu');
+      await expect(menu).toBeVisible();
+      for (const item of ['Alle', 'Ungelesen', 'Gelesen', 'Markiert', 'Nicht markiert']) {
+        await expect(menu.getByRole('menuitemradio', { name: item, exact: true })).toBeVisible();
+      }
+      await expect(menu.getByRole('menuitemradio', { name: 'Alle', exact: true })).toHaveAttribute('aria-checked', 'true');
+      await expect(menu.getByText('Keine', { exact: true })).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expect(menu).toBeHidden();
+    });
+
+    test('Ungelesen filtert die Liste, setzt r=unread in der URL und bleibt nach Reload aktiv', async ({ page }) => {
+      await waitForList(page);
+      const initialCount = await threadRows(page).count();
+      expect(initialCount).toBeGreaterThan(0);
 
       await choose(page, 'Ungelesen');
-      const states = await rowStates(page);
-      expect(states.some((s) => s.unread)).toBe(true);
-      for (const s of states) expect(s.checked).toBe(s.unread);
-      await expect(bulk).toBeVisible();
+      await expect(page).toHaveURL(/[?&]r=unread(&|$)/);
+      await expect(page.locator('#mail-list-title')).toHaveText('Posteingang · Ungelesen');
 
-      await choose(page, 'Keine');
-      for (const s of await rowStates(page)) expect(s.checked).toBe(false);
-      await expect(bulk).toBeHidden();
-    });
-
-    test('Checkbox wählt alle Zeilen und ist dann angehakt', async ({ page }) => {
-      await expect(threadRows(page).first()).toBeVisible();
-      const all = page.locator('#mail-list').getByRole('checkbox', { name: 'Alle auswählen', exact: true });
-      await all.click();
-      await expect(all).toBeChecked();
-      for (const s of await rowStates(page)) expect(s.checked).toBe(true);
-      await expect(page.getByRole('toolbar', { name: 'Aktionen für Auswahl' })).toBeVisible();
-
-      await all.click();
-      await expect(all).not.toBeChecked();
-      for (const s of await rowStates(page)) expect(s.checked).toBe(false);
-    });
-
-    test('Markiert wählt nur die markierten Zeilen', async ({ page }) => {
-      await expect(threadRows(page).first()).toBeVisible();
-      // Make sure at least one row is starred.
-      const first = threadRows(page).first();
-      const star = first.getByRole('button', { name: 'Markieren', exact: true });
-      if (await star.count()) {
-        await star.click();
-        await expect(first.getByRole('button', { name: 'Markierung entfernen', exact: true })).toHaveAttribute('aria-pressed', 'true');
+      const rows = threadRows(page);
+      const count = await rows.count();
+      expect(count).toBeGreaterThan(0);
+      for (let i = 0; i < count; i++) {
+        await expect(rows.nth(i)).toContainText('Ungelesen,');
       }
 
+      await page.reload();
+      await waitForList(page);
+      await expect(page).toHaveURL(/[?&]r=unread(&|$)/);
+      await expect(page.locator('#mail-list-title')).toHaveText('Posteingang · Ungelesen');
+      const reloadedCount = await threadRows(page).count();
+      expect(reloadedCount).toBe(count);
+      for (let i = 0; i < reloadedCount; i++) {
+        await expect(threadRows(page).nth(i)).toContainText('Ungelesen,');
+      }
+    });
+
+    test('Markiert, Nicht markiert und Alle filtern und setzen die Liste zurück', async ({ page }) => {
+      await waitForList(page);
+      const originalCount = await threadRows(page).count();
+      expect(originalCount).toBeGreaterThan(0);
+
       await choose(page, 'Markiert');
-      const states = await rowStates(page);
-      expect(states.some((s) => s.starred)).toBe(true);
-      for (const s of states) expect(s.checked).toBe(s.starred);
+      await expect(page).toHaveURL(/[?&]r=starred(&|$)/);
+      const starredRows = threadRows(page);
+      const starredCount = await starredRows.count();
+      expect(starredCount).toBeGreaterThan(0);
+      for (let i = 0; i < starredCount; i++) {
+        await expect(starredRows.nth(i).getByRole('button', { name: 'Markierung entfernen', exact: true })).toHaveCount(1);
+      }
+
+      await choose(page, 'Nicht markiert');
+      await expect(page).toHaveURL(/[?&]r=unstarred(&|$)/);
+      const unstarredRows = threadRows(page);
+      const unstarredCount = await unstarredRows.count();
+      expect(unstarredCount).toBeGreaterThan(0);
+      for (let i = 0; i < unstarredCount; i++) {
+        await expect(unstarredRows.nth(i).getByRole('button', { name: 'Markierung entfernen', exact: true })).toHaveCount(0);
+      }
+
+      await choose(page, 'Alle');
+      await expect(page).not.toHaveURL(/[?&]r=/);
+      await expect(page.locator('#mail-list-title')).toHaveText('Posteingang');
+      await expect(threadRows(page)).toHaveCount(originalCount);
+    });
+
+    test('Checkbox wählt alle sichtbaren Zeilen auch in einer gefilterten Liste', async ({ page }) => {
+      await waitForList(page);
+      await choose(page, 'Ungelesen');
+
+      const rows = threadRows(page);
+      const count = await rows.count();
+      expect(count).toBeGreaterThan(0);
+
+      const all = page.locator('#mail-list').getByRole('checkbox', { name: 'Alle auswählen', exact: true });
+      await all.check();
+      await expect(all).toBeChecked();
+      for (let i = 0; i < count; i++) {
+        await expect(rows.nth(i).getByRole('checkbox').first()).toBeChecked();
+      }
+      await expect(page.getByRole('toolbar', { name: 'Aktionen für Auswahl' })).toBeVisible();
+
+      await all.uncheck();
+      await expect(all).not.toBeChecked();
+      for (let i = 0; i < count; i++) {
+        await expect(rows.nth(i).getByRole('checkbox').first()).not.toBeChecked();
+      }
+      if (count > 1) {
+        await rows.first().getByRole('checkbox').first().check();
+        expect(await all.evaluate((el) => (el as HTMLInputElement).indeterminate)).toBe(true);
+      }
     });
   });
 
@@ -222,83 +260,5 @@ test.describe('E-Mail-Liste', () => {
 
     await help.getByRole('button', { name: 'Schließen' }).click();
     await expect(help).toBeHidden();
-  });
-});
-
-test.describe('Auswahl-Menü (wie Gmail)', () => {
-  test.beforeEach(async ({ page }) => {
-    await signInDemo(page);
-  });
-
-  /** Per visible row: is it checked, unread, starred. */
-  async function rowStates(page: Page) {
-    const rows = threadRows(page);
-    const n = await rows.count();
-    const out: { checked: boolean; unread: boolean; starred: boolean }[] = [];
-    for (let i = 0; i < n; i++) {
-      const row = rows.nth(i);
-      out.push({
-        checked: await row.getByRole('checkbox').first().isChecked(),
-        unread: ((await row.textContent()) ?? '').includes('Ungelesen,'),
-        starred: (await row.getByRole('button', { name: 'Markierung entfernen', exact: true }).count()) > 0,
-      });
-    }
-    return out;
-  }
-
-  async function pick(page: Page, item: string) {
-    await page.getByRole('button', { name: /^Auswahl/ }).first().click();
-    await page.getByRole('menuitem', { name: item, exact: true }).click();
-  }
-
-  test('Menü zeigt Alle, Keine, Gelesen, Ungelesen, Markiert, Nicht markiert', async ({ page }) => {
-    await page.getByRole('button', { name: /^Auswahl/ }).first().click();
-    for (const item of ['Alle', 'Keine', 'Gelesen', 'Ungelesen', 'Markiert', 'Nicht markiert']) {
-      await expect(page.getByRole('menuitem', { name: item, exact: true })).toBeVisible();
-    }
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('menu')).toHaveCount(0);
-  });
-
-  test('Ungelesen wählt genau die ungelesenen Zeilen, Keine hebt die Auswahl auf', async ({ page }) => {
-    await waitForList(page);
-    await pick(page, 'Ungelesen');
-    const states = await rowStates(page);
-    expect(states.some((s) => s.unread)).toBe(true);
-    for (const s of states) expect(s.checked).toBe(s.unread);
-    await expect(page.getByRole('toolbar', { name: 'Aktionen für Auswahl' })).toBeVisible();
-
-    await pick(page, 'Keine');
-    for (const s of await rowStates(page)) expect(s.checked).toBe(false);
-  });
-
-  test('Markiert und Nicht markiert wählen nach Stern', async ({ page }) => {
-    await waitForList(page);
-    await pick(page, 'Markiert');
-    let states = await rowStates(page);
-    expect(states.some((s) => s.starred)).toBe(true);
-    for (const s of states) expect(s.checked).toBe(s.starred);
-
-    await pick(page, 'Nicht markiert');
-    states = await rowStates(page);
-    for (const s of states) expect(s.checked).toBe(!s.starred);
-  });
-
-  test('Gelesen wählt genau die gelesenen Zeilen', async ({ page }) => {
-    await waitForList(page);
-    await pick(page, 'Gelesen');
-    for (const s of await rowStates(page)) expect(s.checked).toBe(!s.unread);
-  });
-
-  test('Kontrollkästchen wählt alle; teilweise Auswahl ist unbestimmt', async ({ page }) => {
-    await waitForList(page);
-    const all = page.getByRole('checkbox', { name: 'Alle auswählen' });
-    await all.check();
-    for (const s of await rowStates(page)) expect(s.checked).toBe(true);
-    await expect(all).toBeChecked();
-
-    await all.uncheck();
-    await threadRows(page).first().getByRole('checkbox').first().check();
-    expect(await all.evaluate((el) => (el as HTMLInputElement).indeterminate)).toBe(true);
   });
 });

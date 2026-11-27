@@ -6,16 +6,15 @@ import { Button, Checkbox, Dialog, EmptyState, IconButton, Menu, Skeleton, useTo
 import type { Folder, Label, ThreadSummary } from '@/lib/backend/types';
 import { describeError } from '@/lib/i18n';
 import {
-  SELECT_FILTERS,
   neighbourId,
   otherParticipants,
   rangeIds,
-  selectByFilter,
   showsRecipients,
   type ConcreteFolder,
   type OwnIdentity,
-  type SelectFilter,
 } from '@/lib/mail/threads';
+import type { ListFilter } from '@/components/shell/view';
+import { FilterMenu } from './FilterMenu';
 import { ThreadRow, primaryActionFor, type RowCallbacks } from './ThreadRow';
 import type { ThreadActions } from './useThreadActions';
 import type { ThreadListData } from './useThreadList';
@@ -29,6 +28,7 @@ export interface ThreadListProps {
   folder: Folder;
   labelId?: string;
   search?: string;
+  filter?: ListFilter;
   /** Heading shown above the list (folder, label or "Search results"). */
   title: string;
   /** Second line under the title, e.g. the selected mailbox. */
@@ -44,6 +44,8 @@ export interface ThreadListProps {
   onOpen: (thread: ThreadSummary) => void;
   hrefFor: (threadId: string) => string;
   onClearSearch: () => void;
+  onFilterChange: (next: ListFilter | undefined) => void;
+  onClearFilter: () => void;
 }
 
 /** Focuses (and scrolls to) the row link of a thread, if rendered. */
@@ -65,6 +67,7 @@ export function ThreadList({
   folder,
   labelId,
   search,
+  filter,
   title,
   subtitle,
   labels,
@@ -77,6 +80,8 @@ export function ThreadList({
   onOpen,
   hrefFor,
   onClearSearch,
+  onFilterChange,
+  onClearFilter,
 }: ThreadListProps) {
   const { backend, settings, t, lang, online } = useApp();
   const compact = settings.density === 'compact';
@@ -177,20 +182,6 @@ export function ThreadList({
   const toggleAll = () => onSelectionChange(allSelected || someSelected ? new Set() : new Set(order));
   const clear = () => onSelectionChange(new Set());
 
-  const pick = (filter: SelectFilter) => {
-    const ids = selectByFilter(threads, filter);
-    anchorRef.current = null;
-    onSelectionChange(new Set(ids));
-    if (filter !== 'none' && ids.length === 0) toast({ message: t('list.selectNoMatch') });
-  };
-
-  const selectItems: MenuItem[] = SELECT_FILTERS.map((f) => ({
-    id: `select-${f}`,
-    label: t(`list.select.${f}`),
-    disabled: f !== 'none' && order.length === 0,
-    onSelect: () => pick(f),
-  }));
-
   const selectControl = (
     <div className={styles.selectSplit}>
       <Checkbox
@@ -202,14 +193,7 @@ export function ThreadList({
         disabled={order.length === 0}
         onChange={toggleAll}
       />
-      <Menu
-        label={t('list.selectMenu')}
-        icon="chevron-down"
-        size="sm"
-        align="start"
-        className={styles.selectMenu}
-        items={selectItems}
-      />
+      <FilterMenu value={filter} onChange={onFilterChange} />
     </div>
   );
 
@@ -278,7 +262,7 @@ export function ThreadList({
     return undefined;
   };
 
-  const canEmptyFolder = (folder === 'spam' || folder === 'trash') && !labelId && !search && threads.length > 0;
+  const canEmptyFolder = (folder === 'spam' || folder === 'trash') && !labelId && !search && !filter && threads.length > 0;
   const emptyCurrentFolder = async () => {
     if (folder !== 'spam' && folder !== 'trash') return;
     setEmptying(true);
@@ -315,7 +299,7 @@ export function ThreadList({
   // One element for both states so the select control (and focus on its chevron) survives
   // switching between the title header and the bulk bar.
   const bulkMode = selectedIds.length > 0;
-  const showSelect = bulkMode || data.status !== 'ready' || order.length > 0;
+  const showSelect = bulkMode || data.status !== 'ready' || order.length > 0 || !!filter;
   const header = (
     <div
       className={[styles.header, bulkMode && styles.bulk].filter(Boolean).join(' ')}
@@ -416,23 +400,39 @@ export function ThreadList({
       </div>
     );
   } else if (threads.length === 0) {
-    const kind = search ? 'search' : labelId ? 'label' : folder;
-    const icon: IconName =
-      kind === 'search' ? 'search' : kind === 'label' ? 'tag' : kind === 'all' ? 'list' : kind === 'starred' ? 'star' : kind === 'snoozed' ? 'alarm' : kind === 'sent' ? 'send' : kind === 'drafts' ? 'file' : kind === 'scheduled' ? 'clock' : kind === 'archive' ? 'archive' : kind === 'spam' ? 'alert' : kind === 'trash' ? 'trash' : 'inbox';
-    body = (
-      <EmptyState
-        icon={icon}
-        title={t(`list.empty.${kind}.title`)}
-        text={t(`list.empty.${kind}.text`, { query: search ?? '' })}
-        action={
-          search ? (
-            <Button icon="x" onClick={onClearSearch}>
-              {t('search.clear')}
+    if (filter) {
+      const icon: IconName = filter === 'starred' ? 'star' : 'inbox';
+      body = (
+        <EmptyState
+          icon={icon}
+          title={t(`list.empty.filter.${filter}.title`)}
+          text={t('list.empty.filter.text')}
+          action={
+            <Button icon="x" onClick={onClearFilter}>
+              {t('list.clearFilter')}
             </Button>
-          ) : undefined
-        }
-      />
-    );
+          }
+        />
+      );
+    } else {
+      const kind = search ? 'search' : labelId ? 'label' : folder;
+      const icon: IconName =
+        kind === 'search' ? 'search' : kind === 'label' ? 'tag' : kind === 'all' ? 'list' : kind === 'starred' ? 'star' : kind === 'snoozed' ? 'alarm' : kind === 'sent' ? 'send' : kind === 'drafts' ? 'file' : kind === 'scheduled' ? 'clock' : kind === 'archive' ? 'archive' : kind === 'spam' ? 'alert' : kind === 'trash' ? 'trash' : 'inbox';
+      body = (
+        <EmptyState
+          icon={icon}
+          title={t(`list.empty.${kind}.title`)}
+          text={t(`list.empty.${kind}.text`, { query: search ?? '' })}
+          action={
+            search ? (
+              <Button icon="x" onClick={onClearSearch}>
+                {t('search.clear')}
+              </Button>
+            ) : undefined
+          }
+        />
+      );
+    }
   } else {
     body = (
       <ul

@@ -116,6 +116,10 @@ export function parseSearch(q: string): ParsedSearch {
             parsed.isStarred = true;
             continue;
           }
+          if (v === 'unstarred') {
+            parsed.isStarred = false;
+            continue;
+          }
           if (v === 'pinned') {
             parsed.isPinned = true;
             continue;
@@ -169,7 +173,7 @@ export function matchesSearch(
   if (parsed.isUnread !== undefined && message.isRead === parsed.isUnread) {
     return false;
   }
-  if (parsed.isStarred && !message.isStarred) {
+  if (parsed.isStarred !== undefined && message.isStarred !== parsed.isStarred) {
     return false;
   }
   if (parsed.isPinned && !message.isPinned) {

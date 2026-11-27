@@ -101,10 +101,12 @@ describe('matchesSearch on seed messages', () => {
     assert.equal(hits(fx, 'is:read', 'msg-01'), false);
   });
 
-  it('is:starred and is:pinned', async () => {
+  it('is:starred, is:unstarred and is:pinned', async () => {
     const fx = await loadFixture();
     assert.equal(hits(fx, 'is:starred', 'msg-01'), true);
     assert.equal(hits(fx, 'is:starred', 'msg-02'), false);
+    assert.equal(hits(fx, 'is:unstarred', 'msg-01'), false);
+    assert.equal(hits(fx, 'is:unstarred', 'msg-02'), true);
     assert.equal(hits(fx, 'is:pinned', 'msg-01'), true);
     assert.equal(hits(fx, 'is:pinned', 'msg-02'), false);
   });

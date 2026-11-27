@@ -13,7 +13,7 @@
   flex-direction: row-reverse;
   align-items: flex-end;
   gap: var(--space-3);
-  max-width: calc(100vw - 2 * var(--space-4));
+  max-width: var(--composer-dock-max-width, calc(100vw - 2 * var(--space-4)));
   pointer-events: none;
 }
 
@@ -32,8 +32,9 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  flex: 0 1 540px;
-  width: 540px;
+  flex: 0 1 520px;
+  width: 520px;
+  max-width: 100%;
   min-width: 0;
   height: min(620px, 70vh, calc(100dvh - 96px));
   background: var(--color-surface);
@@ -338,7 +339,8 @@
 }
 
 .chipInput {
-  flex: 1 1 80px;
+  flex: 1 1 60px;
+  min-width: 60px;
   min-height: 30px;
 }
 
@@ -759,7 +761,7 @@
 
 @media (max-width: 639px) {
   .fields {
-    padding: 0 var(--space-2);
+    padding: 0 var(--space-4);
   }
 
   .fieldLabel {
@@ -804,15 +806,10 @@
 /* Touch: at least 44x44 effective targets without making chips and rows taller. */
 @media (pointer: coarse), (max-width: 639px) {
   /* Invisible hit area around the small visual controls (does not reach the next chip). */
-  .chipRemove::after,
-  .linkButton::after {
+  .chipRemove::after {
     content: "";
     position: absolute;
-    inset: -7px -4px;
-  }
-
-  .linkButton::after {
-    inset: -6px 0;
+    inset: -8px -4px;
   }
 
   .chipRemove {
@@ -820,7 +817,11 @@
   }
 
   .linkButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-width: 44px;
+    min-height: 44px;
   }
 
   .toolButton,

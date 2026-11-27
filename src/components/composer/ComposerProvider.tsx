@@ -1,6 +1,16 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import type { SendResult } from '@/lib/backend/types';
 import { describeError, formatFullDate } from '@/lib/i18n';
 import { useApp } from '../providers/AppProvider';
@@ -46,6 +56,26 @@ interface PendingSend {
 
 let windowCounter = 0;
 
+function isReplyOrForward(mode: ComposeInit['mode']): boolean {
+  return mode === 'reply' || mode === 'replyAll' || mode === 'forward';
+}
+
+function measureMailPanes(): { panes: Element | null; readerWidth: number | null; dockMaxWidth: number | null } {
+  if (typeof document === 'undefined') return { panes: null, readerWidth: null, dockMaxWidth: null };
+  const listEl = document.getElementById('mail-list');
+  const listPane = listEl?.parentElement ?? null;
+  const panes = listPane?.parentElement ?? null;
+  if (!listPane || !panes) return { panes: null, readerWidth: null, dockMaxWidth: null };
+  const readerPane = panes.lastElementChild;
+  if (!readerPane || readerPane === listPane) return { panes, readerWidth: null, dockMaxWidth: null };
+  const readerRect = readerPane.getBoundingClientRect();
+  const listRect = listPane.getBoundingClientRect();
+  const readerWidth = readerRect.width > 0 ? readerRect.width : null;
+  const sideBySide = listRect.width > 0 && readerRect.width > 0 && readerRect.left >= listRect.right - 2;
+  const dockMaxWidth = sideBySide ? Math.max(280, Math.floor(window.innerWidth - listRect.right - 24)) : null;
+  return { panes, readerWidth, dockMaxWidth };
+}
+
 export function ComposerProvider({ children }: { children: ReactNode }) {
   const { backend, t, lang, settings } = useApp();
   const toast = useToast();
@@ -55,6 +85,7 @@ export function ComposerProvider({ children }: { children: ReactNode }) {
   const compact = phone;
 
   const [windows, setWindows] = useState<WindowEntry[]>([]);
+  const [dockMaxWidth, setDockMaxWidth] = useState<number | null>(null);
   const windowsRef = useRef<WindowEntry[]>([]);
   const [resources, setResources] = useState<Resources>({ status: 'idle', mailboxes: [], signatures: [], templates: [] });
 
@@ -104,11 +135,11 @@ export function ComposerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addWindow = useCallback(
-    (entry: Omit<WindowEntry, 'key' | 'view' | 'focusToken'>, draftId?: string) => {
+    (entry: Omit<WindowEntry, 'key' | 'view' | 'focusToken'>, draftId?: string, initialView: WindowView = 'docked') => {
       windowCounter += 1;
       const key = `composer-${windowCounter}`;
       if (draftId) draftIds.current.set(key, draftId);
-      const next: WindowEntry = { ...entry, key, view: 'docked', focusToken: 1 };
+      const next: WindowEntry = { ...entry, key, view: initialView, focusToken: 1 };
       const others = windowsRef.current.map((w) =>
         w.view === 'expanded' ? { ...w, view: 'docked' as const } : w,
       );
@@ -119,7 +150,7 @@ export function ComposerProvider({ children }: { children: ReactNode }) {
 
   const open = useCallback(
     (init: ComposeInit = { mode: 'new' }) => {
-      const { t: tr, toast: notify } = live.current;
+      const { t: tr, toast: notify, compact: isCompact } = live.current;
       const draftId = init.mode === 'draft' ? init.draftId ?? init.message?.id : undefined;
       if (draftId) {
         for (const [key, id] of draftIds.current) {
@@ -140,7 +171,12 @@ export function ComposerProvider({ children }: { children: ReactNode }) {
         notify({ message: tr('composer.tooMany', { max: MAX_WINDOWS }), tone: 'error' });
         return;
       }
-      addWindow({ init: { ...init, draftId: draftId ?? init.draftId } }, draftId);
+      let initialView: WindowView = 'docked';
+      if (!isCompact && isReplyOrForward(init.mode)) {
+        const { readerWidth } = measureMailPanes();
+        if (readerWidth !== null && readerWidth < 900) initialView = 'expanded';
+      }
+      addWindow({ init: { ...init, draftId: draftId ?? init.draftId } }, draftId, initialView);
     },
     [addWindow, commit, withFocus],
   );
@@ -293,8 +329,29 @@ export function ComposerProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
 
+  useEffect(() => {
+    if (phone || windows.length === 0) {
+      setDockMaxWidth(null);
+      return;
+    }
+    const update = () => setDockMaxWidth(measureMailPanes().dockMaxWidth);
+    update();
+    const { panes } = measureMailPanes();
+    const ro = panes && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    if (ro && panes) ro.observe(panes);
+    window.addEventListener('resize', update);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [phone, windows.length]);
+
   const api = useMemo<ComposerApi>(() => ({ open }), [open]);
   const expanded = !phone && windows.some((w) => w.view === 'expanded');
+  const dockStyle =
+    !phone && dockMaxWidth !== null
+      ? ({ '--composer-dock-max-width': `${dockMaxWidth}px` } as CSSProperties)
+      : undefined;
 
   return (
     <ComposerContext.Provider value={api}>
@@ -310,7 +367,7 @@ export function ComposerProvider({ children }: { children: ReactNode }) {
         />
       )}
       {windows.length > 0 && (
-        <div className={styles.dock} aria-label={t('composer.region')} role="region">
+        <div className={styles.dock} style={dockStyle} aria-label={t('composer.region')} role="region">
           {windows.map((w) => (
             <ComposerWindow
               key={w.key}

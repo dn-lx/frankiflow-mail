@@ -1,7 +1,7 @@
 // Search query parser for the mailbox search field. Pure TypeScript: no JSX,
 // no path aliases (unit tests import this file directly in Node).
 //
-// Supported operators (SPEC): from: to: subject: is:unread|read|starred|pinned
+// Supported operators (SPEC): from: to: subject: is:unread|read|starred|unstarred|pinned
 // has:attachment label: before:YYYY-MM-DD after:YYYY-MM-DD. Values may be
 // quoted ("Anna Schmidt"). Everything else is free text.
 
@@ -16,7 +16,7 @@ export interface SearchToken {
   valid: boolean;
 }
 
-export type IsValue = 'unread' | 'read' | 'starred' | 'pinned';
+export type IsValue = 'unread' | 'read' | 'starred' | 'unstarred' | 'pinned';
 
 export interface ParsedSearch {
   tokens: SearchToken[];
@@ -32,7 +32,7 @@ export interface ParsedSearch {
 }
 
 export const SEARCH_OPERATORS: readonly SearchOperator[] = ['from', 'to', 'subject', 'is', 'has', 'label', 'before', 'after'];
-const IS_VALUES: readonly IsValue[] = ['unread', 'read', 'starred', 'pinned'];
+const IS_VALUES: readonly IsValue[] = ['unread', 'read', 'starred', 'unstarred', 'pinned'];
 
 function isOperator(key: string): key is SearchOperator {
   return (SEARCH_OPERATORS as readonly string[]).includes(key);
