@@ -21,9 +21,11 @@
   },
   "devDependencies": {
     "@playwright/test": "1.65.1",
+    "@types/jsdom": "30.0.0",
     "@types/node": "^22",
     "@types/react": "19.3.3",
     "@types/react-dom": "19.3.0",
+    "jsdom": "31.0.1",
     "typescript": "~5.9"
   },
   "engines": {
