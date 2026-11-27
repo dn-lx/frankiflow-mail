@@ -135,9 +135,6 @@ function searchProjection(tokens: SearchToken[], labelId?: string): string {
   tokens.forEach((token, index) => {
     if (token.key === 'label') selection.push(`search_label_${index}:frankiflow_mail_message_labels!inner(label:frankiflow_mail_labels!inner(name))`);
   });
-  if (tokens.some(t => t.key === 'has' && t.value.toLowerCase() === 'attachment')) {
-    selection.push('attachment_match:frankiflow_mail_attachments(id)');
-  }
   return selection.join(',');
 }
 
@@ -158,8 +155,8 @@ function applySearch(query: MessageQuery, tokens: SearchToken[], now: string): M
       if (lower === 'important') query = query.eq('priority', 'high');
       if (lower === 'muted') query = query.eq('is_muted', true);
     } else if (key === 'has' && lower === 'attachment') {
-      // A left embed plus a not-null filter also finds stale has_attachments flags.
-      query = query.or('has_attachments.eq.true,attachment_match.not.is.null');
+      // An embedded column inside a top-level or() is not reliably supported by PostgREST; use the flag.
+      query = query.eq('has_attachments', true);
     } else if (key === 'in' && FOLDERS.includes(lower as Folder)) {
       query = inFolder(query, lower as Folder, now);
     } else if (key === 'before' || key === 'after') {
