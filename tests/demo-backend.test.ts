@@ -63,11 +63,9 @@ describe('session', () => {
     assert.equal(session.mode, 'demo');
   });
 
-  it('wrong password rejects with auth:invalid and creates no session', async () => {
+  it('wrong password returns auth:invalid and creates no session', async () => {
     const backend = createDemoBackend(createMemoryStorage());
-    await assert.rejects(backend.signIn(ADMIN_EMAIL, 'falsch-123'), {
-      message: 'auth:invalid',
-    });
+    assert.deepEqual(await backend.signIn(ADMIN_EMAIL, 'falsch-123'), { ok: false, error: 'auth:invalid' });
     assert.equal(await backend.getSession(), null);
   });
 
@@ -438,7 +436,7 @@ describe('demo users', () => {
 
     const infoOnly = await listAll(backend, 'all', INFO);
     assert.equal(infoOnly.length, 0);
-    await assert.rejects(backend.getThread('th-01'), { message: 'permission:denied' });
+    await assert.rejects(backend.getThread('th-01'), { message: 'not-found' });
   });
 
   it('a team-only user cannot update a message of the info mailbox', async () => {
@@ -447,7 +445,7 @@ describe('demo users', () => {
     await backend.signIn(TEAM_USER.email, TEAM_USER.password);
 
     await assert.rejects(backend.updateMessages(['msg-01'], { isRead: true }), {
-      message: 'permission:denied',
+      message: 'not-found',
     });
     // The team mailbox is still updatable.
     await backend.updateMessages(['msg-06'], { isRead: true });
