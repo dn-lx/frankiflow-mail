@@ -180,6 +180,38 @@ export function removeToken(query: string, index: number): string {
   return formatSearch(tokens.filter((_, i) => i !== index));
 }
 
+/** Valid operator tokens are shown as chips; free text and invalid operators stay in the input. */
+export function isChipToken(tok: SearchToken): boolean {
+  return tok.kind !== 'text' && tok.valid;
+}
+
+/** The part of `query` the search input shows: free text and invalid operators (chips carry the rest). */
+export function freeText(query: string): string {
+  return formatSearch(tokenizeSearch(query).filter((t) => !isChipToken(t)));
+}
+
+/** Only the chip (valid operator) part of `query`, as a query string. */
+export function chipQuery(query: string): string {
+  return formatSearch(tokenizeSearch(query).filter(isChipToken));
+}
+
+/**
+ * Combines the chip part `chips` with what the user typed into the input.
+ * Operators typed again that are already chips are not duplicated.
+ */
+export function combineQuery(chips: string, text: string): string {
+  const base = tokenizeSearch(chips).filter(isChipToken);
+  const seen = new Set(base.map(formatToken));
+  const typed = tokenizeSearch(text).filter((t) => {
+    if (!isChipToken(t)) return true;
+    const key = formatToken(t);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return formatSearch([...base, ...typed]);
+}
+
 /** Operator tokens with their index, for rendering filter chips. */
 export function filterTokens(query: string): { index: number; token: SearchToken }[] {
   return tokenizeSearch(query)

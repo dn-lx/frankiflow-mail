@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/components/providers/AppProvider';
-import { Avatar, Badge, Button, Icon, IconButton, useToast } from '@/components/ui';
+import { Avatar, Badge, Icon, IconButton, useToast } from '@/components/ui';
 import type { AttachmentMeta, Message } from '@/lib/backend/types';
 import { describeError, formatFullDate, formatListTime, type TranslateVars } from '@/lib/i18n';
 import { sanitizeEmailHtml } from '@/lib/mail/sanitize';
@@ -104,6 +104,29 @@ function formatRecipientSummary(
   return t('reader.toPrefix', { list: `${shown}${extra}` });
 }
 
+/**
+ * Checks whether `htmlBody` carries rich HTML (tables, images, styles, headings, links, formatting)
+ * as opposed to plain text auto-wrapped in `<p>` / `<br>` tags.
+ * Plain-text messages render directly on the themed card surface (avoiding bright white glare in dark mode),
+ * while rich HTML / newsletters or messages with no `textBody` render in the sandboxed `<SafeHtmlFrame>`.
+ */
+function isRichHtmlBody(htmlBody: string, textBody: string): boolean {
+  const trimmed = htmlBody.trim();
+  if (!trimmed) return false;
+  if (!textBody || !textBody.trim()) return true;
+  if (
+    /<(style|table|img|picture|svg|video|audio|iframe|form|ul|ol|li|h[1-6]|blockquote|hr|div|span|a|b|strong|i|em|u|code|pre|font|center)\b/i.test(
+      trimmed,
+    )
+  ) {
+    return true;
+  }
+  if (/\s(style|class|bgcolor|background|color|width|height|align)=/i.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
 function AttachmentItem({ attachment }: { attachment: AttachmentMeta }) {
   const { backend, lang, t } = useApp();
   const toast = useToast();
@@ -189,13 +212,19 @@ function AttachmentItem({ attachment }: { attachment: AttachmentMeta }) {
       </div>
       <div className={styles.attachmentActions}>
         {isPdf && (
-          <Button variant="ghost" size="sm" loading={busy} onClick={handleOpenPdf}>
-            {t('reader.openPdf')}
-          </Button>
+          <IconButton
+            icon="file"
+            label={t('reader.openPdf')}
+            title={`${t('reader.openPdf')}: ${attachment.filename}`}
+            size="sm"
+            loading={busy}
+            onClick={handleOpenPdf}
+          />
         )}
         <IconButton
           icon="download"
           label={`${t('reader.download')}: ${attachment.filename}`}
+          title={`${t('reader.download')}: ${attachment.filename}`}
           size="sm"
           loading={busy}
           onClick={handleDownload}
@@ -231,15 +260,20 @@ export function MessageView({
 
   const hasHtml = Boolean(message.htmlBody && message.htmlBody.trim());
   const hasText = Boolean(message.textBody && message.textBody.trim());
+  const useHtmlFrame = useMemo(
+    () => hasHtml && (isRichHtmlBody(message.htmlBody, message.textBody) || message.folder === 'spam'),
+    [hasHtml, message.htmlBody, message.textBody, message.folder],
+  );
 
   const sanitized = useMemo(() => {
-    if (!expanded || !hasHtml) {
+    if (!expanded || !useHtmlFrame) {
       return { html: '', blockedImages: 0, hasTrackingPixel: false };
     }
     return sanitizeEmailHtml(message.htmlBody, { allowRemoteImages });
-  }, [expanded, hasHtml, message.htmlBody, allowRemoteImages]);
+  }, [expanded, useHtmlFrame, message.htmlBody, allowRemoteImages]);
 
   const showBlockedBar = sanitized.blockedImages > 0 && !allowRemoteImages;
+  const showMutedImagesNote = !showBlockedBar && (allowImagesLocal || sanitized.hasTrackingPixel);
 
   const recipientSummary = useMemo(
     () => formatRecipientSummary(message.to, message.cc, userAddresses, t),
@@ -248,6 +282,7 @@ export function MessageView({
 
   const fullDate = useMemo(() => formatFullDate(dateIso, lang), [dateIso, lang]);
   const relativeHint = useMemo(() => formatRelativeHint(dateIso, t), [dateIso, t]);
+  const listTime = useMemo(() => formatListTime(dateIso, lang), [dateIso, lang]);
 
   const handleAlwaysShowImages = async () => {
     try {
@@ -259,24 +294,28 @@ export function MessageView({
   };
 
   if (!expanded) {
+    const previewText = message.preview || t('reader.emptyBody');
     return (
       <article className={styles.card}>
         <button
           type="button"
           className={styles.collapsedRow}
           aria-expanded={false}
-          aria-label={`${senderLabel} — ${t('reader.expandMessage')}`}
+          aria-label={`${senderLabel} ${previewText} ${listTime} — ${t('reader.expandMessage')}`}
           onClick={() => setExpanded(true)}
         >
           <Avatar name={message.from.name} address={message.from.address} size="sm" />
           <span className={styles.collapsedSender}>{senderLabel}</span>
-          <span className={styles.collapsedPreview}>{message.preview || t('reader.emptyBody')}</span>
+          <span className={styles.collapsedPreview}>{previewText}</span>
           {message.hasAttachments && (
             <span className={styles.collapsedAttach} aria-hidden="true">
               <Icon name="paperclip" size={14} />
             </span>
           )}
-          <span className={styles.collapsedDate}>{formatListTime(dateIso, lang)}</span>
+          <span className={styles.collapsedDate}>{listTime}</span>
+          <span className={styles.collapsedChevron} aria-hidden="true">
+            <Icon name="chevron-down" size={16} />
+          </span>
         </button>
       </article>
     );
@@ -285,64 +324,103 @@ export function MessageView({
   return (
     <article className={styles.card}>
       <header className={styles.header}>
-        <div
-          className={[styles.headerMain, canCollapse && styles.collapsible].filter(Boolean).join(' ')}
-          role={canCollapse ? 'button' : undefined}
-          tabIndex={canCollapse ? 0 : undefined}
-          aria-expanded={canCollapse ? true : undefined}
-          aria-label={canCollapse ? `${senderLabel} — ${t('reader.collapseMessage')}` : undefined}
-          onClick={canCollapse ? () => setExpanded(false) : undefined}
-          onKeyDown={
-            canCollapse
-              ? (e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setExpanded(false);
-                  }
-                }
-              : undefined
-          }
-        >
-          <Avatar name={message.from.name} address={message.from.address} size="md" />
-          <div className={styles.senderBlock}>
-            <div className={styles.senderLine}>
-              <span className={styles.senderName}>{senderLabel}</span>
-              {message.from.name && (
-                <span className={styles.senderAddress}>&lt;{message.from.address}&gt;</span>
+        <div className={styles.headerTop}>
+          <div className={styles.avatarWrap}>
+            <Avatar name={message.from.name} address={message.from.address} size="md" />
+          </div>
+          <div className={styles.headerContent}>
+            <div className={styles.headerFirstRow}>
+              {canCollapse ? (
+                <button
+                  type="button"
+                  className={styles.senderCollapseButton}
+                  aria-expanded={true}
+                  aria-label={`${senderLabel} ${message.from.name ? `<${message.from.address}> ` : ''}— ${t('reader.collapseMessage')}`}
+                  onClick={() => setExpanded(false)}
+                >
+                  <span className={styles.senderName}>{senderLabel}</span>
+                  {message.from.name && (
+                    <span className={styles.senderAddress}>&lt;{message.from.address}&gt;</span>
+                  )}
+                </button>
+              ) : (
+                <div className={styles.senderLine}>
+                  <span className={styles.senderName}>{senderLabel}</span>
+                  {message.from.name && (
+                    <span className={styles.senderAddress}>&lt;{message.from.address}&gt;</span>
+                  )}
+                </div>
               )}
+
+              <div className={styles.headerRight}>
+                <div className={styles.dateBlock}>
+                  <time dateTime={dateIso} title={fullDate}>
+                    {fullDate}
+                    {relativeHint ? ` (${relativeHint})` : ''}
+                  </time>
+                </div>
+                <div className={styles.headerActions}>
+                  <IconButton
+                    icon="reply"
+                    label={t('reader.reply')}
+                    size="sm"
+                    onClick={() => onReply(message)}
+                  />
+                  <IconButton
+                    icon="reply-all"
+                    label={t('reader.replyAll')}
+                    size="sm"
+                    onClick={() => onReplyAll(message)}
+                  />
+                  <IconButton
+                    icon="forward"
+                    label={t('reader.forward')}
+                    size="sm"
+                    onClick={() => onForward(message)}
+                  />
+                </div>
+              </div>
             </div>
-            <div className={styles.recipientLine} onClick={(e) => e.stopPropagation()}>
-              {recipientSummary && (
+
+            {recipientSummary && (
+              <div className={styles.recipientLine}>
                 <button
                   type="button"
                   className={styles.recipientToggle}
                   aria-expanded={showRecipients}
-                  aria-label={t(showRecipients ? 'reader.hideDetails' : 'reader.showDetails')}
+                  aria-label={`${recipientSummary} — ${t(showRecipients ? 'reader.hideDetails' : 'reader.showDetails')}`}
                   onClick={() => setShowRecipients((v) => !v)}
                 >
                   <span>{recipientSummary}</span>
-                  <Icon name="chevron-down" size={14} className={showRecipients ? styles.chevronOpen : undefined} />
+                  <Icon
+                    name="chevron-down"
+                    size={14}
+                    className={showRecipients ? styles.chevronOpen : undefined}
+                  />
                 </button>
-              )}
+              </div>
+            )}
+
+            <div className={styles.phoneDateLine}>
+              <time dateTime={dateIso} title={fullDate}>
+                {fullDate}
+                {relativeHint ? ` (${relativeHint})` : ''}
+              </time>
             </div>
           </div>
-          <div className={styles.dateBlock}>
-            <time dateTime={dateIso} title={fullDate}>
-              {fullDate}
-              {relativeHint ? ` (${relativeHint})` : ''}
-            </time>
-          </div>
-        </div>
-
-        <div className={styles.headerActions}>
-          <IconButton icon="reply" label={t('reader.reply')} size="sm" onClick={() => onReply(message)} />
-          <IconButton icon="reply-all" label={t('reader.replyAll')} size="sm" onClick={() => onReplyAll(message)} />
-          <IconButton icon="forward" label={t('reader.forward')} size="sm" onClick={() => onForward(message)} />
         </div>
       </header>
 
       {showRecipients && (
         <div className={styles.recipientDetails}>
+          {message.from.address && (
+            <div className={styles.detailRow}>
+              <span className={styles.detailLabel}>{t('reader.print.from')}</span>
+              <span className={styles.detailValue}>
+                {message.from.name ? `${message.from.name} <${message.from.address}>` : message.from.address}
+              </span>
+            </div>
+          )}
           {message.to.length > 0 && (
             <div className={styles.detailRow}>
               <span className={styles.detailLabel}>{t('reader.toFull')}</span>
@@ -358,34 +436,54 @@ export function MessageView({
         </div>
       )}
 
-      {(showBlockedBar || sanitized.hasTrackingPixel) && (
+      {showBlockedBar && (
         <div
           className={styles.privacyBar}
           role="region"
-          aria-label={t(showBlockedBar ? 'reader.imagesBlocked' : 'reader.trackingPixelRemoved')}
+          aria-label={t('reader.imagesBlocked')}
         >
-          <span className={styles.privacyText}>
-            <Icon name="image" size={16} />
-            {showBlockedBar && <span>{t('reader.imagesBlocked')}</span>}
+          <span className={styles.privacyInline}>
+            <Icon name="image" size={15} />
+            <span className={styles.privacyLabel}>{t('reader.imagesBlockedShort')}</span>
+            <span className={styles.privacyDot} aria-hidden="true">·</span>
+            <button
+              type="button"
+              className={styles.privacyLink}
+              onClick={() => setAllowImagesLocal(true)}
+            >
+              {t('reader.showImages')}
+            </button>
+            <span className={styles.privacyDot} aria-hidden="true">·</span>
+            <button
+              type="button"
+              className={styles.privacyLinkMuted}
+              onClick={handleAlwaysShowImages}
+            >
+              {t('reader.alwaysShowImages')}
+            </button>
             {sanitized.hasTrackingPixel && (
-              <Badge tone="neutral">{t('reader.trackingPixelRemoved')}</Badge>
+              <Badge tone="neutral" className={styles.privacyBadge}>
+                {t('reader.trackingPixelRemoved')}
+              </Badge>
             )}
           </span>
-          {showBlockedBar && (
-            <span className={styles.privacyActions}>
-              <Button variant="secondary" size="sm" onClick={() => setAllowImagesLocal(true)}>
-                {t('reader.showImages')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={handleAlwaysShowImages}>
-                {t('reader.alwaysShowImages')}
-              </Button>
-            </span>
-          )}
         </div>
       )}
 
-      <div className={styles.body}>
-        {hasHtml && sanitized.html.trim() ? (
+      {showMutedImagesNote && (
+        <div className={styles.privacyCollapsedLine}>
+          <span>
+            {allowImagesLocal && sanitized.hasTrackingPixel
+              ? `${t('reader.imagesShown')} · ${t('reader.trackingPixelRemoved')}`
+              : allowImagesLocal
+                ? t('reader.imagesShown')
+                : t('reader.trackingPixelRemoved')}
+          </span>
+        </div>
+      )}
+
+      <div className={useHtmlFrame ? styles.bodyFrame : styles.body}>
+        {useHtmlFrame && sanitized.html.trim() ? (
           <SafeHtmlFrame html={sanitized.html} allowRemoteImages={allowRemoteImages} />
         ) : hasText ? (
           <PlainTextBody text={message.textBody} />
@@ -395,7 +493,10 @@ export function MessageView({
       </div>
 
       {message.attachments.length > 0 && (
-        <section className={styles.attachments} aria-label={t('reader.attachments', { count: message.attachments.length })}>
+        <section
+          className={styles.attachments}
+          aria-label={t('reader.attachments', { count: message.attachments.length })}
+        >
           <h3 className={styles.attachmentsHeading}>
             <Icon name="paperclip" size={15} />
             <span>
@@ -410,6 +511,35 @@ export function MessageView({
             ))}
           </ul>
         </section>
+      )}
+
+      {canCollapse && !defaultExpanded && (
+        <div className={styles.phoneMessageFooterActions}>
+          <button
+            type="button"
+            className={styles.phoneMessageActionBtn}
+            onClick={() => onReply(message)}
+          >
+            <Icon name="reply" size={16} />
+            <span>{t('reader.reply')}</span>
+          </button>
+          <button
+            type="button"
+            className={styles.phoneMessageActionBtn}
+            onClick={() => onReplyAll(message)}
+          >
+            <Icon name="reply-all" size={16} />
+            <span>{t('reader.replyAllShort')}</span>
+          </button>
+          <button
+            type="button"
+            className={styles.phoneMessageActionBtn}
+            onClick={() => onForward(message)}
+          >
+            <Icon name="forward" size={16} />
+            <span>{t('reader.forward')}</span>
+          </button>
+        </div>
       )}
     </article>
   );

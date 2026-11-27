@@ -369,6 +369,14 @@ export const SETTINGS_STRINGS = {
     de: 'Neues Passwort wiederholen',
     en: 'Repeat new password',
   },
+  'settings.account.showPassword': {
+    de: 'Passwort anzeigen',
+    en: 'Show password',
+  },
+  'settings.account.hidePassword': {
+    de: 'Passwort verbergen',
+    en: 'Hide password',
+  },
   'settings.account.passwordMinHint': {
     de: 'Mindestens 8 Zeichen (im Live-Modus werden 12+ Zeichen empfohlen).',
     en: 'At least 8 characters (12+ characters recommended in live mode).',

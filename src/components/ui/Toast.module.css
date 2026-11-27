@@ -1,15 +1,28 @@
+/*
+ * Phones: bottom, full width minus 16px margins, raised by --toast-offset
+ * (default safe area + 16px; the mail shell raises it above its bottom bar).
+ * >= 768px: bottom-right corner, 24px margins, max 420px wide.
+ */
 .region {
   position: fixed;
   z-index: var(--z-toast);
-  left: 50%;
-  bottom: calc(var(--space-5) + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
+  left: var(--space-4);
+  right: var(--space-4);
+  bottom: var(--toast-offset, calc(env(safe-area-inset-bottom) + 16px));
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: var(--space-2);
-  width: min(480px, calc(100vw - 2 * var(--space-3)));
   pointer-events: none;
+}
+
+@media (min-width: 768px) {
+  .region {
+    left: auto;
+    right: var(--space-6);
+    bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
+    width: min(420px, calc(100vw - 2 * var(--space-6)));
+  }
 }
 
 .toast {
@@ -65,8 +78,16 @@
   font-size: var(--font-size-sm);
 }
 
-.action:hover {
-  background: var(--color-accent-subtle);
+@media (hover: hover) {
+  .action:hover {
+    background: var(--color-accent-subtle);
+  }
+}
+
+@media (pointer: coarse) {
+  .action {
+    min-height: 44px;
+  }
 }
 
 .close {
@@ -77,12 +98,5 @@
   from {
     opacity: 0;
     transform: translateY(8px);
-  }
-}
-
-/* Leave room for the phone bottom action bar. */
-@media (max-width: 640px) {
-  .region {
-    bottom: calc(72px + env(safe-area-inset-bottom));
   }
 }

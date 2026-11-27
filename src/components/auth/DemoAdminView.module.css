@@ -225,6 +225,12 @@
   gap: var(--space-2);
 }
 
+.currentUserLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
+}
+
 .createForm {
   display: flex;
   flex-direction: column;
@@ -235,26 +241,6 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4);
-}
-
-.passwordGroup {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.passwordToggle {
-  align-self: flex-end;
-  min-height: 28px;
-  padding: 2px var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--color-accent-text);
-  font-weight: var(--font-weight-medium);
-  border-radius: var(--radius-sm);
-}
-
-.passwordToggle:hover {
-  background: var(--color-surface-hover);
 }
 
 .fieldset {
@@ -336,8 +322,7 @@
   }
 
   .backLink,
-  .langBtn,
-  .passwordToggle {
+  .langBtn {
     min-height: 44px;
   }
 }

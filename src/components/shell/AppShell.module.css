@@ -117,6 +117,14 @@
   padding: 0 var(--space-1);
 }
 
+/* Long mailbox names end with an ellipsis well before the chevron. */
+.mailboxSelect select {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding-right: 40px;
+}
+
 .singleMailbox {
   padding: 0 var(--space-3);
   font-size: var(--font-size-sm);
@@ -215,8 +223,6 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-bold);
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .muted {
@@ -237,19 +243,28 @@
   padding-right: 36px;
 }
 
-.labelDelete {
+.labelMenu {
   position: absolute;
   right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
-@media (hover: hover) {
-  .labelDelete {
+/* Pointer devices: the "⋮" appears on hover / keyboard focus; touch keeps it visible. */
+@media (hover: hover) and (pointer: fine) {
+  .labelMenu {
     opacity: 0;
   }
 
-  .labelRow:hover .labelDelete,
-  .labelRow:focus-within .labelDelete {
+  .labelRow:hover .labelMenu,
+  .labelRow:focus-within .labelMenu {
     opacity: 1;
+  }
+}
+
+@media (pointer: coarse) {
+  .labelRow .navItem {
+    padding-right: 48px;
   }
 }
 
@@ -308,7 +323,8 @@
 
 .topBar {
   display: flex;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
   flex: none;
   padding: var(--space-2) var(--space-4);
@@ -355,6 +371,7 @@
 
 .searchInput {
   flex: 1;
+  width: 100%;
   min-width: 0;
   min-height: 38px;
   padding: 0 var(--space-2) 0 40px;
@@ -362,6 +379,10 @@
   background: transparent;
   color: var(--color-text);
   font-size: 16px; /* avoids iOS zoom on focus */
+  /* Long queries and the placeholder end with an ellipsis instead of being cut mid-letter. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .searchInput:focus,
@@ -372,6 +393,9 @@
 .searchInput::placeholder {
   color: var(--color-text-muted);
   opacity: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .searchInput::-webkit-search-cancel-button {
@@ -382,13 +406,37 @@
   margin-right: var(--space-1);
 }
 
+/* Filter chips: their own row below the search field (the bar's first row keeps its height). */
 .chips {
   list-style: none;
+  order: 10;
+  flex: 1 0 100%;
+  min-width: 0;
   margin: 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-2);
+}
+
+/* Phones: one horizontally scrollable row. */
+.shell[data-layout="phone"] .chips {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  /* Room for focus rings inside the scroller. */
+  padding: 2px;
+  margin: -2px;
+}
+
+.shell[data-layout="phone"] .chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chips > li {
+  flex: none;
+  max-width: 100%;
 }
 
 .chip {
@@ -444,16 +492,47 @@
   }
 }
 
+/* Right-hand group of the top bar: demo badge (phone), compose (tablet), shortcuts (desktop). */
+.topActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.topActions:empty {
+  display: none;
+}
+
+.topCompose {
+  flex: none;
+  min-height: 40px;
+  border-radius: var(--radius);
+}
+
 .helpButton {
   flex: none;
-  min-width: 36px;
+  width: 40px;
   height: 40px;
-  font-weight: var(--font-weight-bold);
+  min-height: 40px;
+  padding: 0;
   color: var(--color-text-secondary);
 }
 
 .shell[data-layout="phone"] .helpButton {
   display: none;
+}
+
+/* Touch layouts have no keyboard to speak of. */
+@media (pointer: coarse) {
+  .helpButton {
+    display: none;
+  }
+
+  .topCompose {
+    min-height: 44px;
+  }
 }
 
 /* ---------- Panes ---------- */

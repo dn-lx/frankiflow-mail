@@ -80,9 +80,15 @@ registerStrings({
   'search.is.starred': { de: 'Markiert', en: 'Starred' },
   'search.is.pinned': { de: 'Angeheftet', en: 'Pinned' },
   'search.hint': { de: 'Tipp: from:anna is:unread', en: 'Tip: from:anna is:unread' },
+  'search.placeholderShort': { de: 'Suchen …', en: 'Search …' },
+
+  'shell.activeMailbox': { de: 'Postfach: {mailbox}', en: 'Mailbox: {mailbox}' },
+  'shell.labelActions': { de: 'Aktionen für Label „{name}“', en: 'Actions for label “{name}”' },
+  'shell.labelDeleteItem': { de: 'Label löschen', en: 'Delete label' },
 
   // Shortcut help
   'help.open': { de: 'Tastenkürzel anzeigen', en: 'Show keyboard shortcuts' },
+  'help.tooltip': { de: 'Tastenkürzel (?)', en: 'Keyboard shortcuts (?)' },
   'help.title': { de: 'Tastenkürzel', en: 'Keyboard shortcuts' },
   'help.navigation': { de: 'Navigation', en: 'Navigation' },
   'help.actions': { de: 'Aktionen', en: 'Actions' },

@@ -1,4 +1,8 @@
-/* Composer windows: docked bottom right on desktop, full-screen sheet on phones. */
+/*
+ * Composer windows: docked at the right edge on desktop (max 70vh, so the reader
+ * stays readable), full-screen sheet below 1024px (phones and tablets).
+ * The 1023px breakpoint must match `phone` in ComposerProvider.tsx.
+ */
 
 .dock {
   position: fixed;
@@ -31,7 +35,7 @@
   flex: 0 1 540px;
   width: 540px;
   min-width: 0;
-  height: min(620px, calc(100dvh - 96px));
+  height: min(620px, 70vh, calc(100dvh - 96px));
   background: var(--color-surface);
   color: var(--color-text);
   border: 1px solid var(--color-border);
@@ -174,9 +178,16 @@
   flex: none;
 }
 
+/* Errors next to the Send button (above the footer). */
+.footerAlert {
+  border-top: 1px solid var(--color-border);
+  border-bottom: 0;
+}
+
 .alertText {
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Fields */
@@ -186,12 +197,17 @@
   padding: 0 var(--space-3);
 }
 
-.recipientRow {
-  border-bottom: 1px solid var(--color-border);
-}
-
+/* Every field row: subtle bottom divider; it turns into a 2px accent line while focused. */
+.recipientRow,
 .fields > .fieldRow {
   border-bottom: 1px solid var(--color-border);
+  transition: box-shadow var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease);
+}
+
+.recipientRow:focus-within,
+.fields > .fieldRow:focus-within {
+  border-bottom-color: var(--focus-ring-color);
+  box-shadow: 0 1px 0 var(--focus-ring-color);
 }
 
 .fieldRow {
@@ -215,6 +231,15 @@
   padding: var(--space-1) 0;
 }
 
+/* Long "Name <address>" values end with an ellipsis before the chevron. */
+.fromWrap select {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .subjectInput,
 .chipInput {
   flex: 1;
@@ -225,12 +250,21 @@
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text);
+  text-overflow: ellipsis;
 }
 
+.subjectInput::placeholder,
+.chipInput::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+/* The row underline is the focus indicator for these borderless inputs. */
+.subjectInput:focus,
 .subjectInput:focus-visible,
+.chipInput:focus,
 .chipInput:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 0;
+  outline: none;
 }
 
 .chipArea {
@@ -240,7 +274,7 @@
   gap: var(--space-1);
   flex: 1;
   min-width: 0;
-  padding: var(--space-1) 0;
+  padding: 6px 0;
   cursor: text;
 }
 
@@ -253,28 +287,36 @@
   align-items: center;
   max-width: 100%;
   min-width: 0;
+  height: 30px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   background: var(--color-surface-2);
   color: var(--color-text);
   font-size: var(--font-size-sm);
+  line-height: 1;
 }
 
 .chipInvalid {
   border-color: var(--color-danger);
   background: var(--color-danger-subtle);
   color: var(--color-danger);
+  font-weight: var(--font-weight-medium);
 }
 
 .chipLabel {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
-  min-height: 28px;
+  height: 100%;
   padding: 0 var(--space-1) 0 var(--space-3);
   border-radius: var(--radius-pill) 0 0 var(--radius-pill);
   color: inherit;
+}
+
+.chipLabel > svg {
+  flex: none;
 }
 
 .chipText {
@@ -284,38 +326,32 @@
 }
 
 .chipRemove {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
   width: 28px;
-  height: 28px;
+  height: 100%;
   border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
   color: inherit;
 }
 
-.chipLabel:hover,
-.chipRemove:hover {
-  background: var(--color-surface-hover);
-}
-
-.chipInvalid .chipLabel:hover,
-.chipInvalid .chipRemove:hover {
-  background: transparent;
-  text-decoration: underline;
-}
-
 .chipInput {
-  flex: 1 1 120px;
+  flex: 1 1 80px;
+  min-height: 30px;
 }
 
 .ccLinks {
   display: inline-flex;
+  align-items: center;
+  align-self: center;
   gap: var(--space-1);
   flex: none;
 }
 
 .linkButton {
+  position: relative;
   min-height: 32px;
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
@@ -326,8 +362,18 @@
   text-underline-offset: 2px;
 }
 
-.linkButton:hover {
-  background: var(--color-surface-hover);
+@media (hover: hover) {
+  .chipLabel:hover,
+  .chipRemove:hover,
+  .linkButton:hover {
+    background: var(--color-surface-hover);
+  }
+
+  .chipInvalid .chipLabel:hover,
+  .chipInvalid .chipRemove:hover {
+    background: transparent;
+    text-decoration: underline;
+  }
 }
 
 .fieldError {
@@ -340,7 +386,7 @@
 .listbox {
   position: absolute;
   top: 100%;
-  left: 56px;
+  left: 64px;
   right: 0;
   z-index: var(--z-dropdown);
   max-height: 240px;
@@ -349,9 +395,9 @@
   overflow-y: auto;
   list-style: none;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
 }
 
 .listbox[hidden] {
@@ -388,47 +434,56 @@
   min-height: 200px;
 }
 
+/* One row; scrolls sideways when narrow instead of wrapping. */
 .toolbar {
   position: sticky;
   top: 0;
   z-index: 2;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 2px;
   padding: var(--space-1) var(--space-2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
+  transition: box-shadow var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease);
+}
+
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Focus indication for the body: a 2px accent line at the top of the body area.
+   The toolbar is sticky, so the line stays visible however far the body is scrolled. */
+.toolbarFocused {
+  border-bottom-color: var(--focus-ring-color);
+  box-shadow: 0 1px 0 var(--focus-ring-color);
 }
 
 .toolButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   width: 34px;
   height: 34px;
   border-radius: var(--radius-sm);
   color: var(--color-text-secondary);
 }
 
-.toolButton:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-text);
+@media (hover: hover) {
+  .toolButton:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+  }
 }
 
 .toolButton[aria-pressed="true"] {
   background: var(--color-accent-subtle);
   color: var(--color-accent-text);
-}
-
-.clearMark {
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-base);
-  line-height: 1;
-  text-decoration: line-through;
-}
-
-.clearMark sub {
-  font-size: 0.65em;
 }
 
 .editor {
@@ -441,15 +496,28 @@
   cursor: text;
 }
 
-.editor:focus-visible,
-.editor:focus {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: -2px;
+.editor:focus,
+.editor:focus-visible {
+  outline: none;
 }
 
 .editor p,
 .editor div {
   min-height: 1em;
+}
+
+.editor > :first-child {
+  margin-top: 0;
+}
+
+/* "Nachricht schreiben…" in the empty first paragraph (attribute set by RichEditor). */
+.editor [data-ff-placeholder]::before {
+  content: attr(data-ff-placeholder);
+  float: left;
+  height: 0;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  user-select: none;
 }
 
 .editor ul,
@@ -482,8 +550,14 @@
   white-space: pre-wrap;
 }
 
+/* Signature: its own block below the user's text. */
 .editor [data-ff-signature] {
+  margin-top: var(--space-4);
   color: var(--color-text-secondary);
+}
+
+.editor [data-ff-signature]:empty {
+  margin-top: 0;
 }
 
 .editor [data-ff-quote-header] {
@@ -496,6 +570,15 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+/* Dialog buttons: side by side, right aligned; stacked full width with the primary first on phones. */
+.dialogActions {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 /* Attachments */
@@ -545,15 +628,20 @@
   color: var(--color-danger);
 }
 
-/* Footer */
+/* Footer: always one row; Send stays visible. */
 .footer {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   padding: var(--space-2) var(--space-3);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
+}
+
+.footer > * {
+  flex: none;
 }
 
 .sendGroup {
@@ -562,22 +650,37 @@
   gap: 2px;
 }
 
+.footer .narrowOnly {
+  display: none;
+}
+
 .status {
-  margin-left: auto;
   min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
+}
+
+.footer > .status {
+  flex: 1 1 auto;
 }
 
 .statusRetry {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  max-width: 100%;
   min-height: 32px;
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   color: var(--color-danger);
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .statusRetry:hover {
@@ -610,19 +713,8 @@
   pointer-events: none;
 }
 
-/* Tablets: windows share the width */
+/* Phones and tablets: full-screen sheet; minimised windows become bars at the bottom. */
 @media (max-width: 1023px) {
-  .window:not(.windowMinimized):not(.windowExpanded) {
-    flex-basis: min(540px, calc(100vw - 2 * var(--space-4)));
-  }
-
-  .windowMinimized {
-    flex: 0 1 220px;
-  }
-}
-
-/* Phones: full-screen sheet; minimised windows become bars at the bottom */
-@media (max-width: 639px) {
   .dock {
     left: 0;
     right: 0;
@@ -658,31 +750,80 @@
     padding-bottom: max(var(--space-2), env(safe-area-inset-bottom));
   }
 
-  .fieldLabel {
+  /* Header buttons: 44x44 touch targets. */
+  .titleActions > button.headerButton {
     width: 44px;
+    height: 44px;
+  }
+}
+
+@media (max-width: 639px) {
+  .fields {
+    padding: 0 var(--space-2);
+  }
+
+  .fieldLabel {
+    width: 40px;
   }
 
   .listbox {
-    left: 0;
+    left: 48px;
   }
 
   .fieldError {
     margin-left: 0;
   }
+
+  .footer {
+    gap: var(--space-1);
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
+  }
+
+  .dialogActions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .dialogActions > * {
+    width: 100%;
+  }
 }
 
-@media (pointer: coarse) {
-  .chipLabel {
-    min-height: 44px;
+/* Narrow bars: schedule and templates go into the "⋮" menu. */
+@media (max-width: 479px) {
+  .footer .wideOnly {
+    display: none;
+  }
+
+  .footer .narrowOnly {
+    display: inline-flex;
+  }
+}
+
+/* Touch: at least 44x44 effective targets without making chips and rows taller. */
+@media (pointer: coarse), (max-width: 639px) {
+  /* Invisible hit area around the small visual controls (does not reach the next chip). */
+  .chipRemove::after,
+  .linkButton::after {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+  }
+
+  .linkButton::after {
+    inset: -6px 0;
   }
 
   .chipRemove {
-    width: 44px;
-    height: 44px;
+    width: 36px;
+  }
+
+  .linkButton {
+    min-width: 44px;
   }
 
   .toolButton,
-  .linkButton,
   .statusRetry {
     min-width: 44px;
     min-height: 44px;
@@ -707,5 +848,16 @@
 
   .toolButton[aria-pressed="true"] {
     outline: 2px solid Highlight;
+  }
+
+  .editor:focus {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .recipientRow:focus-within,
+  .fields > .fieldRow:focus-within,
+  .toolbarFocused {
+    border-bottom: 2px solid Highlight;
   }
 }

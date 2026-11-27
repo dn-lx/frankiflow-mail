@@ -229,21 +229,138 @@ function collectCssUrls(inner: string): string[] {
   return urls;
 }
 
-function rewriteCss(css: string, allowRemoteImages: boolean): { css: string; blockedCount: number } {
-  const text = normalizeCss(css);
+/** Strictly well-formed inline image URLs. Anything else in CSS that can fetch counts as remote. */
+const SAFE_DATA_URL_RE =
+  /url\(\s*(?:"data:image\/[a-z0-9.+-]+(?:;[a-z0-9=._+-]+)*,[a-z0-9+/=%._~-]*"|'data:image\/[a-z0-9.+-]+(?:;[a-z0-9=._+-]+)*,[a-z0-9+/=%._~-]*'|data:image\/[a-z0-9.+-]+(?:;[a-z0-9=._+-]+)*,[a-z0-9+/=%._~-]*)\s*\)/gi;
+const SAFE_FRAG_URL_RE =
+  /url\(\s*(?:"#[a-z0-9_.:-]+"|'#[a-z0-9_.:-]+'|#[a-z0-9_.:-]+)\s*\)/gi;
+const CSS_FETCH_HINT_RE = /url\s*\(|image-set|image\s*\(|cross-fade|@import|src\s*\(|expression\s*\(|\\/i;
+
+function isStrictlyLocalCss(css: string): boolean {
+  const rest = css
+    .split(`url("${PLACEHOLDER_IMG}")`)
+    .join('')
+    .replace(SAFE_DATA_URL_RE, '')
+    .replace(SAFE_FRAG_URL_RE, '');
+  return !CSS_FETCH_HINT_RE.test(rest);
+}
+
+/**
+ * Splits a CSS string at a top-level delimiter (`;` or `}`), respecting quotes and parentheses.
+ */
+function splitCssTopLevel(css: string, delimiter: ';' | '}'): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = 0; i < css.length; i += 1) {
+    const ch = css[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === '(') {
+      depth += 1;
+    } else if (ch === ')') {
+      if (depth > 0) depth -= 1;
+    } else if (depth === 0 && ch === delimiter) {
+      parts.push(css.slice(start, delimiter === '}' ? i + 1 : i));
+      start = i + 1;
+    }
+  }
+  const tail = css.slice(start);
+  if (tail.trim()) parts.push(tail);
+  return parts;
+}
+
+const WHITE_TEXT_COLOR_RE =
+  /^(?:#(?:fff|ffffff|fefefe|f8fafc|f9fafb|f1f5f9|f3f4f6|fafafa|f5f5f5|eee|eeeeee)|white|rgb\(\s*2[45]\d\s*,\s*2[45]\d\s*,\s*2[45]\d\s*\)|rgba\(\s*2[45]\d\s*,\s*2[45]\d\s*,\s*2[45]\d\s*,[^)]+\))(?:\s*!important)?$/i;
+
+const DARK_BG_COLOR_RE =
+  /#(?:[0-7][0-9a-f]{5}|[0-7][0-9a-f]{2})\b|\b(?:black|navy|darkslategray|darkslateblue|midnightblue|indigo|maroon|darkgreen|darkblue)\b|rgb\(\s*(?:[0-9]|[1-9]\d|1[01]\d)\s*,/i;
+
+function hasSolidBackgroundInDecls(decls: string[]): boolean {
+  for (const d of decls) {
+    const colon = d.indexOf(':');
+    if (colon === -1) continue;
+    const prop = d.slice(0, colon).trim().toLowerCase();
+    const val = d.slice(colon + 1).trim();
+    if ((prop === 'background-color' || prop === 'background') && DARK_BG_COLOR_RE.test(val)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Rewrites a declaration list (either an inline `style` attribute or the body of a CSS `{ ... }` rule)
+ * per declaration:
+ * - replaces remote `url(...)` / `image-set(...)` with `none` (or placeholder for non-background properties)
+ * - applies the fail-closed check per declaration so one malformed declaration doesn't wipe out the rest
+ * - when a remote background image was blocked on a rule/element that has no dark fallback background-color,
+ *   neutralises white/near-white `color` declarations on the same rule/element so text remains visible.
+ */
+function rewriteDeclarationBlock(
+  blockCss: string,
+  allowRemoteImages: boolean,
+  alreadyHasBgBlocked = false,
+): { css: string; blockedCount: number; bgBlocked: boolean } {
+  const rawDecls = splitCssTopLevel(blockCss, ';');
+  let blockedCount = 0;
+  let bgBlocked = alreadyHasBgBlocked;
+  const keptDecls: string[] = [];
+
+  for (const decl of rawDecls) {
+    const trimmed = decl.trim();
+    if (!trimmed) continue;
+    const colon = trimmed.indexOf(':');
+    const prop = colon !== -1 ? trimmed.slice(0, colon).trim().toLowerCase() : '';
+    const isBgProp = prop === 'background' || prop === 'background-image';
+
+    const res = rewriteSingleCssFragment(trimmed, allowRemoteImages, isBgProp);
+    blockedCount += res.blockedCount;
+    if (res.blockedCount > 0 && isBgProp) {
+      bgBlocked = true;
+    }
+    if (res.css.trim()) {
+      keptDecls.push(res.css.trim());
+    }
+  }
+
+  if (!allowRemoteImages && bgBlocked && !hasSolidBackgroundInDecls(keptDecls)) {
+    for (let i = 0; i < keptDecls.length; i += 1) {
+      const d = keptDecls[i]!;
+      const colon = d.indexOf(':');
+      if (colon === -1) continue;
+      const prop = d.slice(0, colon).trim().toLowerCase();
+      const val = d.slice(colon + 1).trim();
+      if (prop === 'color' && WHITE_TEXT_COLOR_RE.test(val)) {
+        keptDecls[i] = 'color: #1b2430';
+      }
+    }
+  }
+
+  return { css: keptDecls.join('; '), blockedCount, bgBlocked };
+}
+
+function rewriteSingleCssFragment(
+  fragment: string,
+  allowRemoteImages: boolean,
+  useNoneForBlockedUrl = false,
+): { css: string; blockedCount: number } {
   let blockedCount = 0;
   let out = '';
   let pos = 0;
-  CSS_FETCH_FN_RE.lastIndex = 0;
+  const re = new RegExp(CSS_FETCH_FN_RE.source, 'gi');
   let m: RegExpExecArray | null;
-  while ((m = CSS_FETCH_FN_RE.exec(text)) !== null) {
+  while ((m = re.exec(fragment)) !== null) {
     const start = m.index;
     const argStart = start + m[0].length;
-    const close = findClosingParen(text, argStart);
-    const end = Math.min(close + 1, text.length);
+    const close = findClosingParen(fragment, argStart);
+    const end = Math.min(close + 1, fragment.length);
     const name = m[1]!.toLowerCase();
-    const inner = text.slice(argStart, close);
-    let replacement = text.slice(start, end);
+    const inner = fragment.slice(argStart, close);
+    let replacement = fragment.slice(start, end);
 
     if (name === 'url' || name === 'src') {
       const value = firstCssArgument(inner);
@@ -251,7 +368,7 @@ function rewriteCss(css: string, allowRemoteImages: boolean): { css: string; blo
         replacement = 'none';
       } else if (!allowRemoteImages && !isLocalResource(value) && !isFragmentRef(value)) {
         blockedCount += 1;
-        replacement = `url("${PLACEHOLDER_IMG}")`;
+        replacement = useNoneForBlockedUrl ? 'none' : `url("${PLACEHOLDER_IMG}")`;
       }
     } else {
       const urls = collectCssUrls(inner);
@@ -263,28 +380,77 @@ function rewriteCss(css: string, allowRemoteImages: boolean): { css: string; blo
       }
     }
 
-    out += text.slice(pos, start) + replacement;
+    out += fragment.slice(pos, start) + replacement;
     pos = end;
-    CSS_FETCH_FN_RE.lastIndex = end;
+    re.lastIndex = end;
   }
-  out += text.slice(pos);
+  out += fragment.slice(pos);
+
   if (!allowRemoteImages && !isStrictlyLocalCss(out)) {
-    // Fail closed: the tokenizer above is best effort. If anything that could still fetch
-    // survives (odd quoting, unterminated strings, escapes), drop the whole stylesheet or
-    // style attribute rather than risk a remote request. The frame CSP blocks it as well.
     return { css: '', blockedCount: Math.max(blockedCount, 1) };
   }
   return { css: out, blockedCount };
 }
 
-/** Strictly well-formed inline image URLs. Anything else in CSS that can fetch counts as remote. */
-const SAFE_DATA_URL_RE =
-  /url\(\s*(?:"data:image\/[a-z0-9.+-]+(?:;[a-z0-9=._+-]+)*,[a-z0-9+/=%._~-]*"|'data:image\/[a-z0-9.+-]+(?:;[a-z0-9=._+-]+)*,[a-z0-9+/=%._~-]*'|data:image\/[a-z0-9.+-]+(?:;[a-z0-9=._+-]+)*,[a-z0-9+/=%._~-]*)\s*\)/gi;
-const CSS_FETCH_HINT_RE = /url\s*\(|image-set|image\s*\(|cross-fade|@import|src\s*\(|expression\s*\(|\\/i;
+function rewriteCssRules(text: string, allowRemoteImages: boolean): { css: string; blockedCount: number } {
+  let blockedCount = 0;
+  const outRules: string[] = [];
 
-function isStrictlyLocalCss(css: string): boolean {
-  const rest = css.split(`url("${PLACEHOLDER_IMG}")`).join('').replace(SAFE_DATA_URL_RE, '');
-  return !CSS_FETCH_HINT_RE.test(rest);
+  for (const rule of splitCssTopLevel(text, '}')) {
+    const openBrace = rule.indexOf('{');
+    const closeBrace = rule.lastIndexOf('}');
+    if (openBrace === -1 || closeBrace === -1 || closeBrace < openBrace) {
+      const res = rewriteSingleCssFragment(rule, allowRemoteImages, false);
+      blockedCount += res.blockedCount;
+      if (res.css.trim()) outRules.push(res.css);
+      continue;
+    }
+    const selector = rule.slice(0, openBrace).trim();
+    const body = rule.slice(openBrace + 1, closeBrace);
+    if (!allowRemoteImages && !isStrictlyLocalCss(selector)) {
+      blockedCount += 1;
+      continue;
+    }
+    if (selector.startsWith('@') && body.includes('{')) {
+      const innerRes = rewriteCssRules(body, allowRemoteImages);
+      blockedCount += innerRes.blockedCount;
+      if (innerRes.css.trim()) {
+        outRules.push(`${selector}{${innerRes.css}}`);
+      }
+    } else {
+      const declRes = rewriteDeclarationBlock(body, allowRemoteImages, false);
+      blockedCount += declRes.blockedCount;
+      if (declRes.css.trim()) {
+        outRules.push(`${selector}{${declRes.css}}`);
+      }
+    }
+  }
+
+  const joined = outRules.join('\n');
+  if (!allowRemoteImages && !isStrictlyLocalCss(joined)) {
+    return { css: '', blockedCount: Math.max(blockedCount, 1) };
+  }
+  return { css: joined, blockedCount };
+}
+
+function rewriteCss(
+  css: string,
+  allowRemoteImages: boolean,
+  mode: 'stylesheet' | 'inline' | 'value' = 'stylesheet',
+  alreadyHasBgBlocked = false,
+): { css: string; blockedCount: number } {
+  const text = normalizeCss(css);
+  if (mode === 'value') {
+    return rewriteSingleCssFragment(text, allowRemoteImages, false);
+  }
+  if (mode === 'inline' || !text.includes('{')) {
+    const res = rewriteDeclarationBlock(text, allowRemoteImages, alreadyHasBgBlocked);
+    if (!allowRemoteImages && !isStrictlyLocalCss(res.css)) {
+      return { css: '', blockedCount: Math.max(res.blockedCount, 1) };
+    }
+    return { css: res.css, blockedCount: res.blockedCount };
+  }
+  return rewriteCssRules(text, allowRemoteImages);
 }
 
 // ---------------------------------------------------------------------------
@@ -371,6 +537,7 @@ export function sanitizeEmailHtml(html: string, options: SanitizeOptions): Sanit
 
     // 4. Resource attributes: allowlist when remote content is blocked.
     let elementBlocked = false;
+    let bgAttrBlocked = false;
     const originals: string[] = [];
     const remember = (v: string) => {
       originals.push(v);
@@ -388,6 +555,7 @@ export function sanitizeEmailHtml(html: string, options: SanitizeOptions): Sanit
       if ((attr === 'src' && tag === 'img') || attr === 'poster') {
         node.setAttribute(attr, PLACEHOLDER_IMG);
       } else {
+        if (attr === 'background') bgAttrBlocked = true;
         node.removeAttribute(attr);
       }
       elementBlocked = true;
@@ -423,21 +591,21 @@ export function sanitizeEmailHtml(html: string, options: SanitizeOptions): Sanit
     for (const attr of CSS_VALUE_ATTRS) {
       const val = node.getAttribute(attr);
       if (val == null || !val.includes('(')) continue;
-      const res = rewriteCss(val, allowRemote);
+      const res = rewriteCss(val, allowRemote, 'value');
       blockedImages += res.blockedCount;
       node.setAttribute(attr, res.css);
     }
 
     const styleAttr = node.getAttribute('style');
     if (styleAttr) {
-      const res = rewriteCss(styleAttr, allowRemote);
+      const res = rewriteCss(styleAttr, allowRemote, 'inline', bgAttrBlocked);
       blockedImages += res.blockedCount;
       node.setAttribute('style', res.css);
     }
 
     // 6. <style> element text (HTML `STYLE` and SVG `style` alike).
     if (tag === 'style' && node.textContent) {
-      const res = rewriteCss(node.textContent, allowRemote);
+      const res = rewriteCss(node.textContent, allowRemote, 'stylesheet');
       blockedImages += res.blockedCount;
       node.textContent = res.css;
     }

@@ -7,6 +7,8 @@
   min-height: 0;
   height: 100%;
   background: var(--color-surface);
+  /* The header adapts to the list column's width, not the viewport's. */
+  container-type: inline-size;
 }
 
 .header {
@@ -14,22 +16,58 @@
   align-items: center;
   gap: var(--space-2);
   flex: none;
+  min-width: 0;
   min-height: 52px;
   padding: var(--space-2) var(--row-pad-x);
+  padding-left: calc(var(--row-pad-x) - 4px);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
 }
 
 .bulk {
   background: var(--color-accent-subtle);
-  gap: var(--space-1);
+  gap: 2px;
+}
+
+/* Select-all checkbox + chevron menu (split control). */
+.selectSplit {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  border-radius: var(--radius-sm);
 }
 
 .headerCheck {
   flex: none;
   justify-content: center;
-  width: 40px;
+  width: 36px;
   min-height: 36px;
+}
+
+.selectMenu > button {
+  width: 22px;
+  min-width: 22px;
+  color: var(--color-text-secondary);
+}
+
+@media (pointer: coarse) {
+  .headerCheck {
+    width: 44px;
+    min-height: 44px;
+  }
+
+  /* 44px effective target; the icon stays small. */
+  .selectMenu > button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .title {
@@ -41,17 +79,58 @@
   white-space: nowrap;
 }
 
+.subtitle {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .spacer {
   flex: 1;
+  min-width: 0;
 }
 
 .bulkCount {
+  flex: none;
+  margin: 0 var(--space-1);
   font-weight: var(--font-weight-medium);
   white-space: nowrap;
 }
 
 .bulkCountShort {
   display: none;
+}
+
+.bulkActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Narrow list column: short count, tighter padding (nothing may be clipped at 320px). */
+@container (max-width: 420px) {
+  .bulkCountLong {
+    display: none;
+  }
+
+  .bulkCountShort {
+    display: inline;
+  }
+
+  .bulk {
+    gap: 0;
+    padding-left: var(--space-1);
+    padding-right: var(--space-1);
+  }
+
+  .bulkActions {
+    gap: 0;
+  }
 }
 
 .scroller {
@@ -94,16 +173,18 @@
   }
 }
 
-.open {
+/* The open thread: tint plus the left accent bar (only this row has the bar). */
+.open,
+.row.open:hover {
   background: var(--color-surface-selected);
-}
-
-.selected {
-  background: var(--color-accent-subtle);
-}
-
-.rows:focus-within .active {
   box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+/* Checked rows all share one tint, hovered or not, open or not. */
+.selected,
+.row.selected:hover,
+.row.selected.open {
+  background: var(--color-accent-subtle);
 }
 
 /* Avatar with selection checkbox on top */
@@ -344,10 +425,23 @@
   box-shadow: var(--shadow-sm);
 }
 
-@media (hover: hover) {
+/*
+ * Only the row under the pointer shows its bar (never a merely focused row as well).
+ * It stays while its snooze menu / dialog is open or the keyboard is inside it.
+ */
+@media (hover: hover) and (pointer: fine) {
   .row:hover .hoverActions,
-  .row:focus-within .hoverActions {
+  .hoverActions:has([aria-expanded="true"], dialog[open], :focus-visible) {
     display: flex;
+  }
+
+  /* Reserve the bar's width so the sender ends with an ellipsis before it (and the time stays visible). */
+  .row.hover3:not(.selectionMode):hover .line1 {
+    padding-right: calc(3 * var(--control-height-sm) + 4 * 2px + 8px);
+  }
+
+  .row.hover4:not(.selectionMode):hover .line1 {
+    padding-right: calc(4 * var(--control-height-sm) + 5 * 2px + 8px);
   }
 }
 
@@ -355,15 +449,22 @@
   display: none;
 }
 
-@media (hover: none) {
+@media (hover: none), (pointer: coarse) {
   .touchMenu {
     display: block;
   }
 
-  /* Star and menu stacked; pulled slightly outwards so the row stays compact. */
+  /* Star above "⋮", each a full 44px target, no overlap; slightly pulled out so the row stays compact. */
   .side {
+    gap: 0;
     padding-top: 0;
-    margin: -8px -4px -8px 0;
+    margin: -6px -8px -6px 0;
+  }
+
+  .side > button,
+  .touchMenu > div > button {
+    width: 44px;
+    height: 44px;
   }
 }
 
@@ -413,23 +514,7 @@
   align-self: center;
 }
 
-.wideOnly {
-  display: inline-flex;
-}
-
 @media (max-width: 420px) {
-  .bulkCountLong {
-    display: none;
-  }
-
-  .bulkCountShort {
-    display: inline;
-  }
-
-  .wideOnly {
-    display: none;
-  }
-
   .row {
     column-gap: var(--space-2);
     padding-left: var(--space-3);

@@ -13,18 +13,20 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .toolbarGroup {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .scrollBody {
@@ -35,6 +37,41 @@
   flex-direction: column;
   gap: var(--space-4);
   min-width: 0;
+}
+
+.spamBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-danger-subtle);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+.spamBannerText {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 240px;
+  min-width: 0;
+  font-weight: var(--font-weight-medium);
+}
+
+.spamBannerText svg {
+  flex: 0 0 auto;
+  color: var(--color-danger);
+}
+
+.spamBannerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .threadHeader {
@@ -97,9 +134,9 @@
   border-radius: var(--radius);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 599px) {
   .toolbar {
-    padding: var(--space-2);
+    padding: var(--space-1) var(--space-2);
   }
 
   .toolbar :global(button) {
@@ -119,17 +156,40 @@
     position: sticky;
     bottom: 0;
     z-index: var(--z-sticky);
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    padding-bottom: calc(var(--space-1) + env(safe-area-inset-bottom));
     background: var(--color-surface);
     border-top: 1px solid var(--color-border);
   }
 
   .phoneAction {
-    flex: 1 1 0;
-    min-height: 44px;
-    padding-inline: var(--space-2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 48px;
+    min-width: 0;
+    padding: 4px 2px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    cursor: pointer;
+    transition: background-color var(--duration-fast) var(--ease);
+  }
+
+  .phoneAction:hover {
+    background: var(--color-surface-hover);
+  }
+
+  .phoneActionLabel {
+    font-size: 12px;
+    font-weight: var(--font-weight-medium);
+    line-height: 1.15;
+    white-space: nowrap;
   }
 }

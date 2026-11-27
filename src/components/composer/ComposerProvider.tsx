@@ -49,8 +49,10 @@ let windowCounter = 0;
 export function ComposerProvider({ children }: { children: ReactNode }) {
   const { backend, t, lang, settings } = useApp();
   const toast = useToast();
-  const phone = useMedia('(max-width: 639px)');
-  const compact = useMedia('(max-width: 1023px)');
+  // Below 1024px (phones and tablets) the composer is a full-screen sheet, so it never
+  // covers half of the mail being replied to. Keep in sync with Composer.module.css.
+  const phone = useMedia('(max-width: 1023px)');
+  const compact = phone;
 
   const [windows, setWindows] = useState<WindowEntry[]>([]);
   const windowsRef = useRef<WindowEntry[]>([]);

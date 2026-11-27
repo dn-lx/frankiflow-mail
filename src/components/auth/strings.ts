@@ -112,7 +112,7 @@ export const AUTH_STRINGS = {
   },
   'demoAdmin.liveOnlyTitle': {
     de: 'Nur im Demo-Modus verfügbar',
-    en: 'Nur im Demo-Modus verfügbar (Only available in demo mode)',
+    en: 'Only available in demo mode',
   },
   'demoAdmin.liveOnlyText': {
     de: 'Die Testbenutzer-Verwaltung steht nur im Demo-Modus zur Verfügung.',
@@ -161,6 +161,10 @@ export const AUTH_STRINGS = {
   'demoAdmin.signInAs': {
     de: 'Anmelden als',
     en: 'Sign in as',
+  },
+  'demoAdmin.currentlySignedIn': {
+    de: 'Aktuell angemeldet',
+    en: 'Currently signed in',
   },
   'demoAdmin.createHeading': {
     de: 'Neuen Testbenutzer anlegen',

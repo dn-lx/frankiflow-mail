@@ -1,8 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  chipQuery,
+  combineQuery,
   filterTokens,
   formatSearch,
+  freeText,
   isIsoDate,
   parseSearch,
   removeToken,
@@ -11,15 +14,20 @@ import {
 import {
   appendThreads,
   compareThreads,
+  displayNameOf,
   fromLocalInputValue,
   groupBy,
   mergeThreads,
   messagesToMove,
   neighbourId,
+  otherParticipants,
+  outboundRecipients,
   patchThreads,
   rangeIds,
   removeThreads,
   sameThread,
+  selectByFilter,
+  showsRecipients,
   snoozePresets,
   sortThreads,
   staysInView,
@@ -252,6 +260,85 @@ describe('thread sorting, merging, navigation, and move helpers', () => {
     const parsed = fromLocalInputValue(inputVal);
     assert.ok(parsed);
     assert.equal(parsed.getTime(), p1.tomorrow.getTime());
+  });
+});
+
+describe('search input vs. filter chips', () => {
+  it('freeText keeps free text and invalid operators; chipQuery keeps valid operators', () => {
+    const q = 'has:attachment is:unread Angebot is:bogus';
+    assert.equal(freeText(q), 'Angebot is:bogus');
+    assert.equal(chipQuery(q), 'has:attachment is:unread');
+    assert.equal(freeText('has:attachment is:unread'), '');
+  });
+
+  it('combineQuery puts chips first and does not duplicate operators typed again', () => {
+    assert.equal(combineQuery('is:unread', 'Rechnung'), 'is:unread Rechnung');
+    assert.equal(combineQuery('is:unread', 'is:unread from:anna'), 'is:unread from:anna');
+    assert.equal(combineQuery('', ''), '');
+    assert.equal(combineQuery('has:attachment', ''), 'has:attachment');
+  });
+});
+
+describe('selectByFilter (list header selection menu)', () => {
+  const threads = [
+    makeThread('t1', '2026-03-10T10:00:00.000Z', { unreadCount: 2, isStarred: true }),
+    makeThread('t2', '2026-03-09T10:00:00.000Z', { unreadCount: 0, isStarred: false }),
+    makeThread('t3', '2026-03-08T10:00:00.000Z', { unreadCount: 1, isStarred: false }),
+    makeThread('t4', '2026-03-07T10:00:00.000Z', { unreadCount: 0, isStarred: true }),
+  ];
+
+  it('selects matching loaded threads in list order', () => {
+    assert.deepEqual(selectByFilter(threads, 'all'), ['t1', 't2', 't3', 't4']);
+    assert.deepEqual(selectByFilter(threads, 'none'), []);
+    assert.deepEqual(selectByFilter(threads, 'read'), ['t2', 't4']);
+    assert.deepEqual(selectByFilter(threads, 'unread'), ['t1', 't3']);
+    assert.deepEqual(selectByFilter(threads, 'starred'), ['t1', 't4']);
+    assert.deepEqual(selectByFilter(threads, 'unstarred'), ['t2', 't3']);
+  });
+
+  it('returns an empty list when nothing matches or nothing is loaded', () => {
+    const allRead = threads.map((t) => ({ ...t, unreadCount: 0 }));
+    assert.deepEqual(selectByFilter(allRead, 'unread'), []);
+    assert.deepEqual(selectByFilter([], 'all'), []);
+  });
+});
+
+describe('recipients for Sent / Drafts rows', () => {
+  const own = [
+    { address: 'team@frankiflow.de', displayName: 'FrankiFlow Team' },
+    { address: 'info@frankiflow.de', displayName: 'FrankiFlow' },
+  ];
+
+  it('showsRecipients only for sent, drafts and scheduled', () => {
+    assert.equal(showsRecipients('sent'), true);
+    assert.equal(showsRecipients('drafts'), true);
+    assert.equal(showsRecipients('scheduled'), true);
+    assert.equal(showsRecipients('inbox'), false);
+  });
+
+  it('displayNameOf reads "Name <addr>" and bare addresses', () => {
+    assert.equal(displayNameOf('Katrin Weber <k.weber@example.de>'), 'Katrin Weber');
+    assert.equal(displayNameOf('"Weber, Katrin" <k.weber@example.de>'), 'Weber, Katrin');
+    assert.equal(displayNameOf('<k.weber@example.de>'), 'k.weber@example.de');
+    assert.equal(displayNameOf('lukas@example.de'), 'lukas@example.de');
+  });
+
+  it('otherParticipants drops own mailboxes by address or display name (case-insensitive)', () => {
+    assert.deepEqual(otherParticipants(['FrankiFlow Team', 'Katrin Weber'], own), ['Katrin Weber']);
+    assert.deepEqual(otherParticipants(['TEAM@frankiflow.de', 'lukas@example.de'], own), ['lukas@example.de']);
+    assert.deepEqual(otherParticipants(['FrankiFlow <info@frankiflow.de>'], own), []);
+    assert.deepEqual(otherParticipants(['Anna', 'anna'], []), ['Anna']);
+  });
+
+  it('outboundRecipients takes To and Cc of the latest outbound or draft message', () => {
+    const msgs = [
+      makeMessage('m1', 'sent', { to: ['Old Person <old@example.de>'] }),
+      makeMessage('m2', 'inbox', { to: ['team@frankiflow.de'] }),
+      makeMessage('m3', 'sent', { to: ['Katrin Weber <k@example.de>'], cc: ['Lukas Schmidt <l@example.de>', 'k@example.de'] }),
+    ];
+    assert.deepEqual(outboundRecipients(msgs), ['Katrin Weber', 'Lukas Schmidt', 'k@example.de']);
+    assert.deepEqual(outboundRecipients([makeMessage('d', 'drafts', { to: [] })]), []);
+    assert.deepEqual(outboundRecipients([makeMessage('i', 'inbox')]), []);
   });
 });
 

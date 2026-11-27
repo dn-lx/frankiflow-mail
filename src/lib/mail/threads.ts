@@ -209,6 +209,102 @@ export function snoozePresets(now: Date = new Date()): SnoozePresets {
   };
 }
 
+/** Selection presets of the list header menu (like Gmail). */
+export type SelectFilter = 'all' | 'none' | 'read' | 'unread' | 'starred' | 'unstarred';
+
+export const SELECT_FILTERS: readonly SelectFilter[] = ['all', 'none', 'read', 'unread', 'starred', 'unstarred'];
+
+/**
+ * Ids (in list order) of the loaded threads matching `filter`:
+ * read = no unread messages, unread = at least one, starred / unstarred by `isStarred`;
+ * `all` = every thread, `none` = nothing.
+ */
+export function selectByFilter(threads: readonly ThreadSummary[], filter: SelectFilter): string[] {
+  const match = (t: ThreadSummary): boolean => {
+    switch (filter) {
+      case 'all':
+        return true;
+      case 'none':
+        return false;
+      case 'read':
+        return t.unreadCount === 0;
+      case 'unread':
+        return t.unreadCount > 0;
+      case 'starred':
+        return t.isStarred;
+      case 'unstarred':
+        return !t.isStarred;
+    }
+  };
+  return threads.filter(match).map((t) => t.id);
+}
+
+/** Folders whose rows show the recipients ("To: …") instead of the sender. */
+export function showsRecipients(folder: Folder): boolean {
+  return folder === 'sent' || folder === 'drafts' || folder === 'scheduled';
+}
+
+const NAME_ADDR_RE = /^\s*"?([^"<]*?)"?\s*<([^<>]*)>\s*$/;
+
+/** The display part of `Name <addr>` (or the bare address / name as given). */
+export function displayNameOf(entry: string): string {
+  const m = NAME_ADDR_RE.exec(entry);
+  if (m) return (m[1] ?? '').trim() || (m[2] ?? '').trim();
+  return entry.trim();
+}
+
+function addressOf(entry: string): string {
+  const m = NAME_ADDR_RE.exec(entry);
+  return (m ? (m[2] ?? '') : entry).trim().toLowerCase();
+}
+
+export interface OwnIdentity {
+  address: string;
+  displayName?: string;
+}
+
+/**
+ * Thread participants that are not the user's own mailboxes (matched case-insensitively
+ * by address or display name), as display names, without duplicates.
+ */
+export function otherParticipants(participants: readonly string[], own: readonly OwnIdentity[]): string[] {
+  const ownKeys = new Set<string>();
+  for (const o of own) {
+    if (o.address) ownKeys.add(o.address.trim().toLowerCase());
+    if (o.displayName) ownKeys.add(o.displayName.trim().toLowerCase());
+  }
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const p of participants) {
+    const name = displayNameOf(p);
+    if (!name) continue;
+    if (ownKeys.has(name.toLowerCase()) || ownKeys.has(addressOf(p))) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
+/** Recipients (To, then Cc) of the latest outbound or draft message, as display names. */
+export function outboundRecipients(messages: readonly Pick<Message, 'direction' | 'to' | 'cc'>[]): string[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i] as Pick<Message, 'direction' | 'to' | 'cc'>;
+    if (m.direction !== 'outbound' && m.direction !== 'draft') continue;
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const entry of [...m.to, ...m.cc]) {
+      const name = displayNameOf(entry);
+      if (!name || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      out.push(name);
+    }
+    return out;
+  }
+  return [];
+}
+
 /** `YYYY-MM-DDTHH:mm` in local time, for `<input type="datetime-local">`. */
 export function toLocalInputValue(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');

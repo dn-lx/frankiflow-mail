@@ -14,7 +14,14 @@ import {
   type Ref,
 } from 'react';
 import type { Contact, MailBackend } from '@/lib/backend/types';
-import { emailProblem, formatAddress, parseAddressList, splitAddressText, type ParsedAddress } from '@/lib/mail/addresses';
+import {
+  emailProblem,
+  formatAddress,
+  parseAddressList,
+  preferTypedAddress,
+  splitAddressText,
+  type ParsedAddress,
+} from '@/lib/mail/addresses';
 import { Icon } from '../ui/Icon';
 import { newRecipientId, toRecipients } from './recipients.ts';
 import type { Recipient } from './types';
@@ -57,15 +64,19 @@ export function RecipientInput({ label, value, onChange, backend, t, handleRef, 
   const textRef = useRef(text);
   textRef.current = text;
   const focused = useRef(false);
+  /** The user moved through the suggestions with the arrow keys since the last edit. */
+  const navigated = useRef(false);
   const seq = useRef(0);
   const baseId = useId();
   const inputId = `${baseId}-input`;
   const listId = `${baseId}-list`;
   const errorId = `${baseId}-error`;
   const labelId = `${baseId}-label`;
+  const invalidHintId = `${baseId}-invalid`;
 
   const closeList = useCallback(() => {
     seq.current += 1;
+    navigated.current = false;
     setOpen(false);
     setActive(-1);
     setSuggestions([]);
@@ -177,6 +188,7 @@ export function RecipientInput({ label, value, onChange, backend, t, handleRef, 
 
   const onInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value;
+    navigated.current = false;
     if (/[,;\n]/.test(v) && !hasOpenQuoteOrAngle(v)) {
       const endsWithSep = /[,;\n]\s*$/.test(v);
       const parts = splitAddressText(v);
@@ -205,18 +217,27 @@ export function RecipientInput({ label, value, onChange, backend, t, handleRef, 
     commitText(`${current.slice(0, start)}${pasted}${current.slice(end)}`);
   };
 
+  /** The highlighted suggestion, unless the typed text already is (or looks like) an address. */
+  const pickSuggestion = (): Contact | undefined => {
+    if (!open || active < 0) return undefined;
+    if (preferTypedAddress(textRef.current, navigated.current)) return undefined;
+    return suggestions[active];
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     const count = suggestions.length;
     switch (e.key) {
       case 'ArrowDown':
         if (!count) return;
         e.preventDefault();
+        navigated.current = true;
         setOpen(true);
         setActive((a) => (a + 1) % count);
         return;
       case 'ArrowUp':
         if (!count) return;
         e.preventDefault();
+        navigated.current = true;
         setOpen(true);
         setActive((a) => (a <= 0 ? count - 1 : a - 1));
         return;
@@ -227,13 +248,13 @@ export function RecipientInput({ label, value, onChange, backend, t, handleRef, 
           return;
         }
         e.preventDefault();
-        const pick = open && active >= 0 ? suggestions[active] : undefined;
+        const pick = pickSuggestion();
         if (pick) choose(pick);
         else if (textRef.current.trim()) commitText(textRef.current);
         return;
       }
       case 'Tab': {
-        const pick = open && active >= 0 ? suggestions[active] : undefined;
+        const pick = pickSuggestion();
         if (pick) {
           setText('');
           textRef.current = '';
@@ -282,15 +303,20 @@ export function RecipientInput({ label, value, onChange, backend, t, handleRef, 
                     <button
                       type="button"
                       className={styles.chipLabel}
-                      title={problem ? t(`composer.email.${problem}`, { address: r.address }) : formatAddress(r)}
+                      title={
+                        problem
+                          ? `${t('composer.recipient.invalidShort')}: ${t(`composer.email.${problem}`, { address: r.address })}`
+                          : formatAddress(r)
+                      }
                       aria-label={
                         problem
                           ? t('composer.recipient.editInvalid', { address: r.address })
                           : t('composer.recipient.edit', { address: formatAddress(r) })
                       }
+                      aria-describedby={problem ? invalidHintId : undefined}
                       onClick={() => edit(r)}
                     >
-                      {problem && <Icon name="alert" size={14} />}
+                      {problem && <Icon name="alert" size={16} />}
                       <span className={styles.chipText}>{shown}</span>
                     </button>
                     <button
@@ -372,6 +398,11 @@ export function RecipientInput({ label, value, onChange, backend, t, handleRef, 
             .map((r) => t(`composer.email.${emailProblem(r.address) ?? 'invalid'}`, { address: r.address }))
             .join(' ')}
         </p>
+      )}
+      {invalid.length > 0 && (
+        <span id={invalidHintId} className="sr-only">
+          {t('composer.recipient.invalidShort')}
+        </span>
       )}
       <span className="sr-only" role="status" aria-live="polite">
         {announcement}

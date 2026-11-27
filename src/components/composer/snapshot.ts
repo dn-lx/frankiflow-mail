@@ -4,7 +4,7 @@
 // helpers and the date formatter are passed in, so this runs in Node tests too.
 
 import type { MailBackend, Mailbox, Message, Signature } from '../../lib/backend/types.ts';
-import { parseAddressList, replyAllRecipients, replyRecipients, replySubject } from '../../lib/mail/addresses.ts';
+import { namesFromMessage, parseAddressList, replyAllRecipients, replyRecipients, replySubject } from '../../lib/mail/addresses.ts';
 import type { SubjectLang } from '../../lib/mail/addresses.ts';
 import type { HtmlKit, QuoteLabels } from './html-core.ts';
 import { toRecipients } from './recipients.ts';
@@ -106,10 +106,12 @@ export function buildSnapshot(
     let cc: string[] = [];
     if (init.mode === 'reply') to = replyRecipients(message, ownAddresses);
     if (init.mode === 'replyAll') ({ to, cc } = replyAllRecipients(message, ownAddresses));
-    const ccList = toRecipients(cc.map((address) => ({ name: '', address, raw: address })));
+    const names = namesFromMessage(message);
+    const named = (address: string) => ({ name: names.get(address.toLowerCase()) ?? '', address, raw: address });
+    const ccList = toRecipients(cc.map(named));
     return {
       mailboxId,
-      to: toRecipients(to.map((address) => ({ name: '', address, raw: address }))),
+      to: toRecipients(to.map(named)),
       cc: ccList,
       bcc: [],
       showCc: ccList.length > 0,

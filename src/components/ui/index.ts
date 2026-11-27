@@ -1,5 +1,5 @@
 export { Avatar, initialsFor, hueFor, type AvatarProps } from './Avatar';
-export { Badge, type BadgeProps, type BadgeTone } from './Badge';
+export { Badge, DemoBadge, type BadgeProps, type BadgeTone, type DemoBadgeProps } from './Badge';
 export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from './Button';
 export { Checkbox, type CheckboxProps } from './Checkbox';
 export { Dialog, type DialogProps } from './Dialog';

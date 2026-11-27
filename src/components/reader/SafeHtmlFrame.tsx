@@ -28,6 +28,16 @@ const FRAME_CSS = `
     overflow-wrap: break-word;
     -webkit-text-size-adjust: 100%;
   }
+  html[data-frame-theme="dark"], html[data-frame-theme="dark"] body {
+    background: #e8eaed;
+    color: #1b2430;
+  }
+  @media (prefers-color-scheme: dark) {
+    html[data-frame-theme="system"], html[data-frame-theme="system"] body {
+      background: #e8eaed;
+      color: #1b2430;
+    }
+  }
   body {
     padding: 16px;
     overflow-x: auto;
@@ -35,6 +45,19 @@ const FRAME_CSS = `
   img, picture, video, svg {
     max-width: 100%;
     height: auto;
+  }
+  img[data-src] {
+    display: inline-block;
+    width: auto !important;
+    max-height: 28px !important;
+    min-height: 24px;
+    padding: 2px 8px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 4px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 12px;
+    line-height: 20px;
   }
   table {
     max-width: 100%;
@@ -133,18 +156,31 @@ function foldQuotedHtml(sanitizedHtml: string, toggleLabel: string): string {
  * content-length heuristic with internal scrolling and pair it with an explicit
  * expand/collapse toggle for long newsletters.
  */
-function estimateFrameHeight(html: string): number {
-  const textLen = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().length;
-  const breakCount = (html.match(/<(br|p|div|tr|li|h[1-6])\b/gi) ?? []).length;
-  const imgCount = (html.match(/<img\b/gi) ?? []).length;
-  const estimated = 120 + Math.round(textLen * 0.38) + breakCount * 18 + imgCount * 90;
-  return Math.max(220, Math.min(620, estimated));
+/**
+ * Estimates a usable iframe height from sanitized HTML content.
+ *
+ * Because the iframe intentionally omits `allow-same-origin`, the parent window
+ * cannot read `contentDocument.body.scrollHeight`. We therefore compute a
+ * content-length heuristic with internal scrolling and pair it with an explicit
+ * expand/collapse toggle when the estimate may be too small.
+ */
+function estimateFrameHeight(html: string, allowRemoteImages: boolean): { height: number; mayOverflow: boolean } {
+  const withoutStyle = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
+  const textLen = withoutStyle.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().length;
+  const blockCount = (withoutStyle.match(/<(br|p|div|tr|li|h[1-6]|blockquote|section|article|table)\b/gi) ?? []).length;
+  const imgCount = (withoutStyle.match(/<img\b/gi) ?? []).length;
+  const linesFromText = Math.ceil(textLen / 62);
+  const imgHeight = imgCount * (allowRemoteImages ? 180 : 36);
+  const raw = 44 + linesFromText * 24 + blockCount * 16 + imgHeight;
+  const height = Math.max(80, Math.min(540, raw));
+  const mayOverflow = raw > 240 || imgCount > 0 || blockCount > 6 || html.length > 900;
+  return { height, mayOverflow };
 }
 
-function buildSrcDoc(bodyHtml: string, allowRemoteImages: boolean): string {
+function buildSrcDoc(bodyHtml: string, allowRemoteImages: boolean, theme: 'light' | 'dark' | 'system'): string {
   // The CSP meta must come first so it applies before any other content is parsed.
   return `<!doctype html>
-<html>
+<html data-frame-theme="${theme}">
 <head>
 ${cspMetaTag(allowRemoteImages)}
 <meta charset="utf-8">
@@ -158,18 +194,20 @@ ${cspMetaTag(allowRemoteImages)}
 }
 
 export function SafeHtmlFrame({ html, title, allowRemoteImages = false }: SafeHtmlFrameProps) {
-  const { t } = useApp();
+  const { t, settings } = useApp();
   const [expanded, setExpanded] = useState(false);
 
   const toggleLabel = t('reader.toggleQuoted');
   const foldedHtml = useMemo(() => foldQuotedHtml(html, toggleLabel), [html, toggleLabel]);
   const srcDoc = useMemo(
-    () => buildSrcDoc(foldedHtml, allowRemoteImages),
-    [foldedHtml, allowRemoteImages],
+    () => buildSrcDoc(foldedHtml, allowRemoteImages, settings.theme),
+    [foldedHtml, allowRemoteImages, settings.theme],
   );
-  const compactHeight = useMemo(() => estimateFrameHeight(html), [html]);
-  const canExpand = compactHeight >= 400 || html.length > 2200;
-  const height = expanded ? Math.max(720, Math.min(1600, Math.round(compactHeight * 2.2))) : compactHeight;
+  const { height: compactHeight, mayOverflow } = useMemo(
+    () => estimateFrameHeight(html, allowRemoteImages),
+    [html, allowRemoteImages],
+  );
+  const height = expanded ? Math.max(680, Math.min(1600, Math.round(compactHeight * 2.2))) : compactHeight;
 
   return (
     <div className={styles.wrapper}>
@@ -182,7 +220,7 @@ export function SafeHtmlFrame({ html, title, allowRemoteImages = false }: SafeHt
           style={{ height: `${height}px` }}
         />
       </div>
-      {canExpand && (
+      {mayOverflow && (
         <div className={styles.controls}>
           <Button
             variant="ghost"

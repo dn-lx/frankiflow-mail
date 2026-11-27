@@ -52,6 +52,9 @@
   --color-on-danger: #ffffff;
   --color-warning: #8a5300;
   --color-warning-subtle: #fff4e0;
+  /* DEMO badge: #7A4A00 on #FFF1D6 ≈ 6.7:1 */
+  --color-demo-bg: #fff1d6;
+  --color-demo-text: #7a4a00;
   --color-success: #1e7b34;
   --color-success-subtle: #e6f4ea;
   --color-on-success: #ffffff;
@@ -128,20 +131,44 @@
   --control-height-sm: 30px;
   --pane-pad: var(--space-5);
   --gap: var(--space-3);
+  /* Mail list rows */
+  --list-row-pad-y: var(--space-3);
+  --list-row-pad-x: var(--space-4);
+  --list-row-gap: var(--space-3);
+  --list-row-line-gap: 2px;
+  --list-avatar-size: 40px;
+  --list-line-height: var(--line-height);
+  /* <Avatar size="md"> follows density. */
+  --avatar-size-md: 36px;
+  --avatar-font-md: var(--font-size-sm);
 
   /* Layout */
   --sidebar-width: 240px;
   --list-width: 380px;
+
+  /* Offline banner height (set by AppProvider while offline) and toast offset (phones). */
+  --offline-banner-height: 0px;
+  --toast-offset: calc(env(safe-area-inset-bottom) + 16px);
 }
 
+/* Compact: clearly denser (rows roughly half the padding, 28px avatars, tighter text). */
 :root[data-density="compact"] {
-  --row-height: 56px;
-  --row-pad-y: var(--space-2);
+  --row-height: 48px;
+  --row-pad-y: 6px;
   --row-pad-x: var(--space-3);
   --control-height: 32px;
   --control-height-sm: 28px;
-  --pane-pad: var(--space-4);
+  --pane-pad: var(--space-3);
   --gap: var(--space-2);
+  --line-height: 1.4;
+  --list-row-pad-y: 6px;
+  --list-row-pad-x: var(--space-3);
+  --list-row-gap: var(--space-2);
+  --list-row-line-gap: 0px;
+  --list-avatar-size: 28px;
+  --list-line-height: 1.4;
+  --avatar-size-md: 28px;
+  --avatar-font-md: 11px;
 }
 
 /* Dark palette. Duplicated for explicit dark and for system + OS dark. */
@@ -173,6 +200,9 @@
   --color-on-danger: #1b0605;
   --color-warning: #e8b45a;
   --color-warning-subtle: #3a2e17;
+  /* DEMO badge: #F0C674 on #3A2E17 ≈ 8.2:1 */
+  --color-demo-bg: #3a2e17;
+  --color-demo-text: #f0c674;
   --color-success: #6ccb86;
   --color-success-subtle: #193324;
   --color-on-success: #06200f;
@@ -216,6 +246,8 @@
     --color-on-danger: #1b0605;
     --color-warning: #e8b45a;
     --color-warning-subtle: #3a2e17;
+    --color-demo-bg: #3a2e17;
+    --color-demo-text: #f0c674;
     --color-success: #6ccb86;
     --color-success-subtle: #193324;
     --color-on-success: #06200f;
