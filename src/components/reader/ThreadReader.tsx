@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useComposer } from '@/components/composer';
 import { SnoozeMenu } from '@/components/list/SnoozeMenu';
 import { useApp } from '@/components/providers/AppProvider';
@@ -9,14 +9,17 @@ import {
   Button,
   Dialog,
   EmptyState,
+  Icon,
   IconButton,
   Menu,
   Skeleton,
   useToast,
   type MenuItem,
 } from '@/components/ui';
+import formStyles from '@/components/ui/Form.module.css';
 import type { Label, Mailbox, Message, Priority } from '@/lib/backend/types';
-import { describeError } from '@/lib/i18n';
+import { describeError, type Lang } from '@/lib/i18n';
+import { fromLocalInputValue, snoozePresets, toLocalInputValue } from '@/lib/mail/threads';
 import { MessageView } from './MessageView';
 import { openPrintView } from './printThread';
 import './strings';
@@ -38,6 +41,32 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return Boolean(target.closest('[contenteditable="true"]'));
 }
 
+function formatTimeOnly(d: Date, lang: Lang): string {
+  return new Intl.DateTimeFormat(lang === 'de' ? 'de-DE' : 'en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d);
+}
+
+/**
+ * Toolbar visibility stage based on container width and viewport width:
+ * - stage 0 (phone < 600px viewport or very narrow container < 360px):
+ *   Back, Archive, Delete, Star + "⋮"
+ * - stage 1 (360..439px container): + Snooze
+ * - stage 2 (440..519px container): + Mark unread
+ * - stage 3 (520..599px container): + Spam
+ * - stage 4 (>= 600px container): + Move & Labels (all actions fit)
+ */
+type ToolbarStage = 0 | 1 | 2 | 3 | 4;
+
+function computeToolbarStage(containerWidth: number, viewportWidth: number): ToolbarStage {
+  if (viewportWidth < 600 || containerWidth < 360) return 0;
+  if (containerWidth < 440) return 1;
+  if (containerWidth < 520) return 2;
+  if (containerWidth < 600) return 3;
+  return 4;
+}
+
 export function ThreadReader({
   threadId,
   mailboxId,
@@ -56,11 +85,35 @@ export function ThreadReader({
   const [error, setError] = useState<string | null>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deletingForever, setDeletingForever] = useState(false);
+  const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
+  const [toolbarStage, setToolbarStage] = useState<ToolbarStage>(4);
+  const toolbarRef = useRef<HTMLElement>(null);
 
   // Thread id marked read (or being marked read); reset on failure so a later load retries.
   const markedReadThreadRef = useRef<string | null>(null);
   // Thread currently shown; responses for any other thread are stale and ignored.
   const activeThreadRef = useRef<string>(threadId);
+
+  useEffect(() => {
+    const el = toolbarRef.current;
+    if (!el || typeof window === 'undefined') return;
+    const update = () => {
+      const cw = el.clientWidth || window.innerWidth;
+      const vw = window.innerWidth;
+      setToolbarStage(computeToolbarStage(cw, vw));
+    };
+    update();
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(update);
+      ro.observe(el);
+    }
+    window.addEventListener('resize', update);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [loading, error, messages.length]);
 
   const markThreadRead = useCallback(
     async (requested: string, msgs: Message[], silent: boolean) => {
@@ -469,8 +522,93 @@ export function ThreadReader({
     [labels, threadLabelIds, handleToggleLabel],
   );
 
-  const moreItems: MenuItem[] = useMemo(
-    () => [
+  const showSnoozeInline = toolbarStage >= 1;
+  const showUnreadInline = toolbarStage >= 2;
+  const showSpamInline = toolbarStage >= 3;
+  const showMoveAndLabelsInline = toolbarStage >= 4;
+
+  const moreItems: MenuItem[] = useMemo(() => {
+    const items: MenuItem[] = [];
+
+    // Overflowed primary/secondary toolbar actions in priority order:
+    // snooze, mark unread, spam, move/label
+    if (!showSnoozeInline) {
+      const presets = snoozePresets(new Date());
+      if (presets.laterToday) {
+        const d = presets.laterToday;
+        items.push({
+          id: 'ov-snooze-later',
+          icon: 'clock',
+          label: `${t('reader.snooze')}: ${t('snooze.laterToday', { time: formatTimeOnly(d, lang) })}`,
+          onSelect: () => void handleSnooze(d.toISOString()),
+        });
+      }
+      items.push(
+        {
+          id: 'ov-snooze-tomorrow',
+          icon: 'alarm',
+          label: `${t('reader.snooze')}: ${t('snooze.tomorrow', { time: formatTimeOnly(presets.tomorrow, lang) })}`,
+          onSelect: () => void handleSnooze(presets.tomorrow.toISOString()),
+        },
+        {
+          id: 'ov-snooze-custom',
+          icon: 'edit',
+          label: `${t('reader.snooze')}: ${t('snooze.custom')}`,
+          onSelect: () => setCustomSnoozeOpen(true),
+        },
+      );
+    }
+
+    if (!showUnreadInline) {
+      items.push({
+        id: 'unread',
+        icon: 'inbox',
+        label: t('reader.markUnread'),
+        onSelect: () => void handleMarkUnread(),
+      });
+    }
+
+    if (!showSpamInline) {
+      items.push({
+        id: 'ov-spam',
+        icon: 'alert',
+        label: t(isSpam ? 'reader.notSpam' : 'reader.spam'),
+        onSelect: () =>
+          void moveThread(
+            isSpam ? 'inbox' : 'spam',
+            isSpam ? 'reader.toast.notSpam' : 'reader.toast.spam',
+          ),
+      });
+    }
+
+    if (!showMoveAndLabelsInline) {
+      if (items.length > 0) items.push({ id: 'sep-ov-move', separator: true });
+      for (const m of moveItems) {
+        if ('separator' in m) continue;
+        items.push({
+          ...m,
+          id: `ov-${m.id}`,
+          label: `${t('reader.move')}: ${m.label}`,
+        });
+      }
+      if (labelItems.length > 0) {
+        items.push({ id: 'sep-ov-labels', separator: true });
+        for (const l of labelItems) {
+          if ('separator' in l) continue;
+          items.push({
+            ...l,
+            id: `ov-${l.id}`,
+            icon: 'tag',
+          });
+        }
+      }
+    }
+
+    if (items.length > 0) {
+      items.push({ id: 'sep-ov-end', separator: true });
+    }
+
+    items.push(
       {
         id: 'pin',
         label: t(isPinned ? 'reader.unpin' : 'reader.pin'),
@@ -497,11 +635,17 @@ export function ThreadReader({
         onSelect: () => void handlePriority('low'),
       },
       { id: 'sep-1', separator: true },
-      {
+    );
+
+    if (showUnreadInline) {
+      items.push({
         id: 'unread',
         label: t('reader.markUnread'),
         onSelect: () => void handleMarkUnread(),
-      },
+      });
+    }
+
+    items.push(
       {
         id: 'print',
         label: t('reader.print'),
@@ -523,23 +667,34 @@ export function ThreadReader({
         shortcut: 'j',
         onSelect: () => onNavigate('next'),
       },
-    ],
-    [
-      t,
-      isPinned,
-      handleTogglePin,
-      priority,
-      handlePriority,
-      handleMarkUnread,
-      handlePrint,
-      onNavigate,
-    ],
-  );
+    );
+
+    return items;
+  }, [
+    showSnoozeInline,
+    showUnreadInline,
+    showSpamInline,
+    showMoveAndLabelsInline,
+    t,
+    lang,
+    handleSnooze,
+    handleMarkUnread,
+    isSpam,
+    moveThread,
+    moveItems,
+    labelItems,
+    isPinned,
+    handleTogglePin,
+    priority,
+    handlePriority,
+    handlePrint,
+    onNavigate,
+  ]);
 
   if (loading) {
     return (
       <section className={styles.root} aria-busy="true" aria-label={t('common.loading')}>
-        <div className={styles.toolbar}>
+        <div className={styles.toolbar} ref={toolbarRef}>
           <IconButton icon="chevron-left" label={t('reader.back')} onClick={onBack} />
           <Skeleton width={180} height={24} />
         </div>
@@ -562,7 +717,7 @@ export function ThreadReader({
   if (error) {
     return (
       <section className={styles.root}>
-        <div className={styles.toolbar}>
+        <div className={styles.toolbar} ref={toolbarRef}>
           <IconButton icon="chevron-left" label={t('reader.back')} onClick={onBack} />
         </div>
         <div className={styles.stateCenter}>
@@ -584,7 +739,7 @@ export function ThreadReader({
   if (messages.length === 0) {
     return (
       <section className={styles.root}>
-        <div className={styles.toolbar}>
+        <div className={styles.toolbar} ref={toolbarRef}>
           <IconButton icon="chevron-left" label={t('reader.back')} onClick={onBack} />
         </div>
         <div className={styles.stateCenter}>
@@ -605,7 +760,7 @@ export function ThreadReader({
 
   return (
     <section className={styles.root} aria-label={subject}>
-      <header className={styles.toolbar}>
+      <header className={styles.toolbar} ref={toolbarRef}>
         <div className={styles.toolbarGroup}>
           <IconButton icon="chevron-left" label={t('reader.back')} onClick={onBack} />
           <IconButton
@@ -623,25 +778,40 @@ export function ThreadReader({
             onClick={handleDelete}
           />
           <IconButton
-            icon="alert"
-            label={t(isSpam ? 'reader.notSpam' : 'reader.spam')}
-            onClick={() =>
-              void moveThread(
-                isSpam ? 'inbox' : 'spam',
-                isSpam ? 'reader.toast.notSpam' : 'reader.toast.spam',
-              )
-            }
-          />
-          <IconButton
             icon={isStarred ? 'star-filled' : 'star'}
             label={`${t(isStarred ? 'reader.unstar' : 'reader.star')} (s)`}
             pressed={isStarred}
             onClick={() => void handleToggleStar()}
           />
-          <SnoozeMenu onPick={(iso) => void handleSnooze(iso)} />
-          <Menu label={t('reader.move')} icon="inbox" items={moveItems} />
-          {labels.length > 0 && (
-            <Menu label={t('reader.labels')} icon="tag" items={labelItems} />
+          {showSnoozeInline && (
+            <SnoozeMenu onPick={(iso) => void handleSnooze(iso)} />
+          )}
+          {showUnreadInline && (
+            <IconButton
+              icon="file"
+              label={t('reader.markUnread')}
+              onClick={() => void handleMarkUnread()}
+            />
+          )}
+          {showSpamInline && (
+            <IconButton
+              icon="alert"
+              label={t(isSpam ? 'reader.notSpam' : 'reader.spam')}
+              onClick={() =>
+                void moveThread(
+                  isSpam ? 'inbox' : 'spam',
+                  isSpam ? 'reader.toast.notSpam' : 'reader.toast.spam',
+                )
+              }
+            />
+          )}
+          {showMoveAndLabelsInline && (
+            <>
+              <Menu label={t('reader.move')} icon="inbox" items={moveItems} />
+              {labels.length > 0 && (
+                <Menu label={t('reader.labels')} icon="tag" items={labelItems} />
+              )}
+            </>
           )}
         </div>
         <div className={styles.toolbarGroup}>
@@ -650,6 +820,31 @@ export function ThreadReader({
       </header>
 
       <div className={styles.scrollBody}>
+        {isSpam && (
+          <div className={styles.spamBanner} role="alert">
+            <div className={styles.spamBannerText}>
+              <Icon name="alert" size={18} />
+              <span>{t('reader.spamBanner')}</span>
+            </div>
+            <div className={styles.spamBannerActions}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void moveThread('inbox', 'reader.toast.notSpam')}
+              >
+                {t('reader.notSpam')}
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => setConfirmDeleteOpen(true)}
+              >
+                {t('reader.deleteForever')}
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className={styles.threadHeader}>
           <h1 className={styles.subject}>{subject}</h1>
           <div className={styles.badges}>
@@ -699,31 +894,44 @@ export function ThreadReader({
 
       {latestMessage && (
         <nav className={styles.phoneBottomBar} aria-label={t('reader.reply')}>
-          <Button
-            variant="secondary"
-            icon="reply"
+          <button
+            type="button"
             className={styles.phoneAction}
+            aria-label={t('reader.reply')}
             onClick={() => handleReply(latestMessage)}
           >
-            {t('reader.reply')}
-          </Button>
-          <Button
-            variant="secondary"
-            icon="reply-all"
+            <Icon name="reply" size={18} />
+            <span className={styles.phoneActionLabel}>{t('reader.reply')}</span>
+          </button>
+          <button
+            type="button"
             className={styles.phoneAction}
+            aria-label={t('reader.replyAll')}
             onClick={() => handleReplyAll(latestMessage)}
           >
-            {t('reader.replyAll')}
-          </Button>
-          <Button
-            variant="secondary"
-            icon="forward"
+            <Icon name="reply-all" size={18} />
+            <span className={styles.phoneActionLabel}>{t('reader.replyAllShort')}</span>
+          </button>
+          <button
+            type="button"
             className={styles.phoneAction}
+            aria-label={t('reader.forward')}
             onClick={() => handleForward(latestMessage)}
           >
-            {t('reader.forward')}
-          </Button>
+            <Icon name="forward" size={18} />
+            <span className={styles.phoneActionLabel}>{t('reader.forward')}</span>
+          </button>
         </nav>
+      )}
+
+      {customSnoozeOpen && (
+        <OverflowSnoozeDialog
+          onClose={() => setCustomSnoozeOpen(false)}
+          onPick={(iso) => {
+            setCustomSnoozeOpen(false);
+            void handleSnooze(iso);
+          }}
+        />
       )}
 
       <Dialog
@@ -749,5 +957,75 @@ export function ThreadReader({
         }
       />
     </section>
+  );
+}
+
+function OverflowSnoozeDialog({
+  onClose,
+  onPick,
+}: {
+  onClose: () => void;
+  onPick: (iso: string) => void;
+}) {
+  const { t } = useApp();
+  const formId = useId();
+  const inputId = useId();
+  const [value, setValue] = useState(() => toLocalInputValue(snoozePresets(new Date()).tomorrow));
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const d = fromLocalInputValue(value);
+    if (!d || d.getTime() <= Date.now()) {
+      setError(t('snooze.past'));
+      return;
+    }
+    onPick(d.toISOString());
+  };
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={t('snooze.customTitle')}
+      size="sm"
+      closeLabel={t('common.close')}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button variant="primary" type="submit" form={formId} icon="alarm">
+            {t('snooze.confirm')}
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={submit} noValidate className={formStyles.field}>
+        <label htmlFor={inputId} className={formStyles.label}>
+          {t('snooze.when')}
+        </label>
+        <input
+          id={inputId}
+          type="datetime-local"
+          className={formStyles.input}
+          value={value}
+          min={toLocalInputValue(new Date())}
+          required
+          autoFocus
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? `${inputId}-err` : undefined}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError(null);
+          }}
+        />
+        {error && (
+          <span id={`${inputId}-err`} className={formStyles.error} role="alert">
+            {error}
+          </span>
+        )}
+      </form>
+    </Dialog>
   );
 }

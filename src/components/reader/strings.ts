@@ -47,12 +47,22 @@ registerStrings({
     de: 'Externe Bilder blockiert, um Ihre Privatsphäre zu schützen',
     en: 'External images blocked to protect your privacy',
   },
+  'reader.imagesBlockedShort': {
+    de: 'Externe Bilder blockiert',
+    en: 'External images blocked',
+  },
   'reader.showImages': { de: 'Bilder anzeigen', en: 'Show images' },
   'reader.alwaysShowImages': { de: 'Immer anzeigen', en: 'Always show' },
+  'reader.imagesShown': { de: 'Bilder werden angezeigt', en: 'Images are shown' },
   'reader.trackingPixelRemoved': { de: 'Tracking-Pixel entfernt', en: 'Tracking pixel removed' },
 
+  'reader.spamBanner': {
+    de: 'Diese Nachricht wurde als Spam erkannt. Links und Anhänge mit Vorsicht öffnen.',
+    en: 'This message was identified as spam. Be careful when opening links and attachments.',
+  },
+
   'reader.frameTitle': { de: 'E-Mail-Inhalt', en: 'Email content' },
-  'reader.expandFrame': { de: 'Vollständig anzeigen', en: 'Expand view' },
+  'reader.expandFrame': { de: 'Ganze Nachricht anzeigen', en: 'Show full message' },
   'reader.collapseFrame': { de: 'Kompakt anzeigen', en: 'Compact view' },
 
   'reader.attachments': { de: '{count} Anhänge', en: '{count} attachments' },
@@ -63,6 +73,7 @@ registerStrings({
 
   'reader.reply': { de: 'Antworten', en: 'Reply' },
   'reader.replyAll': { de: 'Allen antworten', en: 'Reply all' },
+  'reader.replyAllShort': { de: 'Allen', en: 'Reply all' },
   'reader.forward': { de: 'Weiterleiten', en: 'Forward' },
 
   'reader.notFound.title': { de: 'Konversation nicht gefunden', en: 'Conversation not found' },

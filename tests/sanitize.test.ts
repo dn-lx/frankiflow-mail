@@ -238,4 +238,49 @@ describe('second-review CSS bypasses (fail closed)', () => {
     const out = clean(`<div style="background:url('data:image/png;base64,iVBORw0KGgo=')">x</div>`).html;
     assert.ok(out.includes('data:image/png;base64,iVBORw0KGgo='), out);
   });
+
+  it('keeps newsletter text visible and strips white-on-white text color when remote hero background image is blocked', () => {
+    const newsletterHtml = `
+      <style>
+        .hero {
+          background-image: url("https://images.example.com/cleanpro-hero.jpg");
+          color: #fff;
+          padding: 24px;
+        }
+        .copy {
+          color: #334155;
+          line-height: 1.5;
+        }
+        .cta {
+          display: inline-block;
+          background: #1F8A8A;
+          color: #ffffff;
+          padding: 10px 18px;
+        }
+      </style>
+      <div class="hero" style="background: url('https://images.example.com/banner.jpg') no-repeat center/cover; color: #fff;">
+        <h2>15% Rabatt auf Öko-Konzentrate</h2>
+        <p class="copy">Entdecken Sie unsere neuen biologisch abbaubaren Reiniger für Büro- und Treppenhausreinigung.</p>
+        <a href="https://cleanpro-bedarf.example.com/aktion" class="cta">Jetzt ansehen</a>
+      </div>
+    `;
+    const res = clean(newsletterHtml, false);
+    assertNoRemote(res.html);
+    assert.ok(res.blockedImages >= 2, `expected blockedImages >= 2, got ${res.blockedImages}`);
+    assert.ok(res.html.includes('15% Rabatt auf Öko-Konzentrate'), 'headline must remain present');
+    assert.ok(res.html.includes('biologisch abbaubaren Reiniger'), 'body copy must remain present');
+    assert.ok(res.html.includes('Jetzt ansehen'), 'CTA text must remain present');
+    // The .copy and .cta rules in <style> must not be wiped out by the hero rule
+    assert.ok(res.html.includes('.copy') && res.html.includes('#334155'), '<style> rules without remote fetches must survive');
+    // Neither the .hero rule nor the inline style on .hero may retain white text on a now-empty background
+    const doc = parse(res.html);
+    const hero = doc.querySelector('.hero');
+    assert.ok(hero);
+    const inlineStyle = hero.getAttribute('style') ?? '';
+    assert.ok(!/color\s*:\s*(#fff|#ffffff|white)\b/i.test(inlineStyle), `white inline color survived on blocked bg: ${inlineStyle}`);
+    const styleTagText = doc.querySelector('style')?.textContent ?? '';
+    const heroRuleMatch = /\.hero\s*\{([^}]*)\}/.exec(styleTagText);
+    assert.ok(heroRuleMatch, `<style> .hero rule should survive with safe declarations: ${styleTagText}`);
+    assert.ok(!/color\s*:\s*(#fff|#ffffff|white)\b/i.test(heroRuleMatch[1]!), `white rule color survived on blocked bg: ${heroRuleMatch[1]}`);
+  });
 });
