@@ -113,7 +113,7 @@ export function Sidebar({ view, mailboxes, labels, counts, metaError, onRetryMet
             const current = activeFolder === f;
             return (
               <li key={f}>
-                <Link
+                <Link prefetch={false}
                   href={hrefFor({ folder: f, labelId: null, search: null, threadId: null })}
                   className={[styles.navItem, current && styles.navCurrent, n > 0 && f === 'inbox' && styles.navUnread].filter(Boolean).join(' ')}
                   aria-current={current ? 'page' : undefined}
@@ -149,7 +149,7 @@ export function Sidebar({ view, mailboxes, labels, counts, metaError, onRetryMet
               const current = view.labelId === l.id;
               return (
                 <li key={l.id} className={styles.labelRow}>
-                  <Link
+                  <Link prefetch={false}
                     href={hrefFor({ folder: 'all', labelId: l.id, search: null, threadId: null })}
                     className={[styles.navItem, current && styles.navCurrent].filter(Boolean).join(' ')}
                     aria-current={current ? 'page' : undefined}
@@ -180,12 +180,12 @@ export function Sidebar({ view, mailboxes, labels, counts, metaError, onRetryMet
       </section>
 
       <div className={styles.sidebarBottom}>
-        <Link href="/settings/" className={styles.navItem} onClick={afterNav}>
+        <Link prefetch={false} href="/settings/" className={styles.navItem} onClick={afterNav}>
           <Icon name="settings" size={18} />
           <span className={styles.navText}>{t('shell.settings')}</span>
         </Link>
         {mode === 'demo' && (
-          <Link href="/demo-admin/" className={styles.navItem} onClick={afterNav}>
+          <Link prefetch={false} href="/demo-admin/" className={styles.navItem} onClick={afterNav}>
             <Icon name="users" size={18} />
             <span className={styles.navText}>{t('shell.testUsers')}</span>
           </Link>

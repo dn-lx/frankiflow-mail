@@ -232,7 +232,7 @@ export function DemoAdminView() {
             </h1>
             <p className={styles.subtitle}>{t('demoAdmin.liveOnlyText')}</p>
             <div className={styles.liveActions}>
-              <Link href={backHref} className={styles.backLink}>
+              <Link prefetch={false} href={backHref} className={styles.backLink}>
                 {backLabel}
               </Link>
               <Button variant="secondary" onClick={() => setMode('demo')}>
@@ -252,7 +252,7 @@ export function DemoAdminView() {
       <div className={styles.container}>
         <header className={styles.topHeader}>
           <div className={styles.navRow}>
-            <Link href={backHref} className={styles.backLink}>
+            <Link prefetch={false} href={backHref} className={styles.backLink}>
               ← {backLabel}
             </Link>
             <div className={styles.langSwitch} role="group" aria-label={t('auth.lang.label')}>

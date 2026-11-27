@@ -78,8 +78,15 @@ test.describe('Einstellungen', () => {
     await page.goto('/mail/');
     await expect(page.locator('#mail-list')).toBeVisible();
     const composer = await openComposer(page);
-    await composer.getByRole('button', { name: 'Vorlage einfügen' }).click();
-    await page.getByRole('menuitem', { name }).click();
+    // Desktop shows a templates button; narrow screens move templates into the "⋮" menu.
+    const templateButton = composer.getByRole('button', { name: 'Vorlage einfügen' });
+    if (await templateButton.isVisible()) {
+      await templateButton.click();
+      await page.getByRole('menuitem', { name }).click();
+    } else {
+      await composer.getByRole('button', { name: 'Weitere Aktionen' }).click();
+      await page.getByRole('menuitem', { name: `Vorlage: ${name}` }).click();
+    }
 
     await expect(composerBody(composer)).toContainText(text);
     await expect(composerSubject(composer)).toHaveValue(subject);

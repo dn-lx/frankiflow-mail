@@ -59,6 +59,11 @@ export const test = base.extend<{ guard: Guard }>({
         guard.consoleErrors.push(where ? `${msg.text()} (${where})` : msg.text());
       });
       page.on('pageerror', (err) => {
+        // WebKit reports a same-origin fetch that is cancelled by a navigation or reload
+        // (Next's page-data/prefetch requests) as "Fetch API cannot load <url> due to access
+        // control checks". Nothing fails for the user; ignore it only for our own origin.
+        // WebKit prints the URL oddly ("http: /host/…"), so match on our host instead of the URL.
+        if (/^Fetch API cannot load /.test(err.message) && /due to access control checks/.test(err.message) && err.message.includes(new URL(origin).host)) return;
         guard.pageErrors.push(`${err.name}: ${err.message}`);
       });
       page.on('dialog', async (dialog) => {

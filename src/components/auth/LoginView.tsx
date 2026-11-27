@@ -197,7 +197,7 @@ export function LoginView() {
           </Button>
         ) : (
           <div className={styles.demoFooter}>
-            <Link href="/demo-admin/" className={styles.demoLink}>
+            <Link prefetch={false} href="/demo-admin/" className={styles.demoLink}>
               {t('auth.login.manageDemoUsers')}
             </Link>
             <button

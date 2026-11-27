@@ -482,7 +482,7 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
 
       {isPhone && !reading && (
         <nav className={styles.bottomBar} aria-label={t('shell.bottomNav')} inert={drawerMode && drawerOpen}>
-          <Link
+          <Link prefetch={false}
             href={hrefFor({ folder: 'inbox', labelId: null, search: null, threadId: null })}
             className={styles.bottomItem}
             aria-current={view.folder === 'inbox' && !view.labelId && !view.search ? 'page' : undefined}

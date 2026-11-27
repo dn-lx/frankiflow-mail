@@ -391,7 +391,7 @@ export function SettingsView() {
       <header className={styles.header}>
         <div className={styles.headerInner}>
           <div className={styles.topRow}>
-            <Link href="/mail/" className={styles.backLink} onClick={(e) => handleNavigateClick(e, '/mail/')}>
+            <Link prefetch={false} href="/mail/" className={styles.backLink} onClick={(e) => handleNavigateClick(e, '/mail/')}>
               ← {t('settings.backToMail')}
             </Link>
             {hasUnsavedChanges && (
@@ -840,7 +840,7 @@ export function SettingsView() {
 
             {mode === 'demo' && (
               <div>
-                <Link
+                <Link prefetch={false}
                   href="/demo-admin/"
                   className={styles.demoAdminLink}
                   onClick={(e) => handleNavigateClick(e, '/demo-admin/')}

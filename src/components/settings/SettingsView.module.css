@@ -492,13 +492,16 @@
   }
 
   .layout {
-    grid-template-columns: 1fr;
+    /* minmax(0, …) lets the column shrink below the non-wrapping tab row,
+       which then scrolls inside itself instead of widening the page. */
+    grid-template-columns: minmax(0, 1fr);
     padding: var(--space-3) var(--space-3) 96px;
     gap: var(--space-4);
   }
 
   .sideNav {
     position: static;
+    min-width: 0;
   }
 
   .navList {
