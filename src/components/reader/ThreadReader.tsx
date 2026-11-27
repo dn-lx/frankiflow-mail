@@ -87,7 +87,7 @@ export function ThreadReader({
   const [deletingForever, setDeletingForever] = useState(false);
   const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
   const [toolbarStage, setToolbarStage] = useState<ToolbarStage>(4);
-  const toolbarRef = useRef<HTMLElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
 
   // Thread id marked read (or being marked read); reset on failure so a later load retries.
   const markedReadThreadRef = useRef<string | null>(null);
