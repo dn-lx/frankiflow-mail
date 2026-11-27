@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type MouseEv
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Mailbox, Settings, Signature, Template } from '@/lib/backend/types';
+import { describeError } from '@/lib/i18n';
 import { useApp } from '@/components/providers/AppProvider';
 import {
   Badge,
@@ -16,9 +17,12 @@ import {
   TextField,
   useToast,
 } from '@/components/ui';
-import { RichEditor, sanitizeEditorHtml } from './RichEditor';
+import { RichEditor } from './RichEditor';
+import { escapeHtml, evaluatePasswordStrength, sanitizeEditorHtml } from './sanitize';
 import './strings';
 import styles from './SettingsView.module.css';
+
+export { evaluatePasswordStrength };
 
 type SectionId =
   | 'appearance'
@@ -68,28 +72,8 @@ function stripHtmlPreview(html: string): string {
   return text.length > 120 ? `${text.slice(0, 117)}…` : text;
 }
 
-export function evaluatePasswordStrength(pwd: string): {
-  score: 0 | 1 | 2 | 3;
-  key: 'settings.account.strengthWeak' | 'settings.account.strengthFair' | 'settings.account.strengthGood' | 'settings.account.strengthStrong';
-} {
-  if (pwd.length < 8) {
-    return { score: 0, key: 'settings.account.strengthWeak' };
-  }
-  let points = 1;
-  if (pwd.length >= 12) points += 1;
-  const hasLower = /[a-z]/.test(pwd);
-  const hasUpper = /[A-Z]/.test(pwd);
-  const hasDigit = /\d/.test(pwd);
-  const hasSymbol = /[^A-Za-z0-9]/.test(pwd);
-  const variety = [hasLower, hasUpper, hasDigit, hasSymbol].filter(Boolean).length;
-  if (variety >= 3) points += 1;
-  if (points >= 3) return { score: 3, key: 'settings.account.strengthStrong' };
-  if (points === 2) return { score: 2, key: 'settings.account.strengthGood' };
-  return { score: 1, key: 'settings.account.strengthFair' };
-}
-
 export function SettingsView() {
-  const { backend, session, settings, setSettings, mode, t, refreshSession } = useApp();
+  const { backend, session, settings, setSettings, mode, t, lang, refreshSession } = useApp();
   const toast = useToast();
   const router = useRouter();
 
@@ -126,9 +110,16 @@ export function SettingsView() {
 
   // Unsaved changes leave confirmation dialog
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [pendingExit, setPendingExit] = useState<
+    { type: 'href'; href: string } | { type: 'signout' } | null
+  >(null);
 
   const loadAuxData = useCallback(async () => {
-    if (!session) return;
+    if (!session) {
+      setLoadingData(false);
+      router.replace('/login/');
+      return;
+    }
     setLoadingData(true);
     setDataError(null);
     try {
@@ -142,13 +133,14 @@ export function SettingsView() {
 
       const draftsMap: Record<string, SignatureDraft> = {};
       for (const mb of mbs) {
-        const match =
-          sigs.find((s) => s.mailboxId === mb.id) ??
-          (mb.isPrimary ? sigs.find((s) => !s.mailboxId) : undefined);
+        const ownMatch = sigs.find((s) => s.mailboxId === mb.id);
+        const match = ownMatch ?? (mb.isPrimary ? sigs.find((s) => !s.mailboxId) : undefined);
         draftsMap[mb.id] = {
-          id: match?.id ?? '',
+          id: ownMatch?.id ?? '',
           mailboxId: mb.id,
-          html: match?.html ?? `<p>Mit freundlichen Grüßen<br><strong>${mb.displayName}</strong></p>`,
+          html:
+            match?.html ??
+            `<p>${escapeHtml(t('settings.signatures.defaultGreeting'))}<br><strong>${escapeHtml(mb.displayName)}</strong></p>`,
           isDefault: match ? match.isDefault : true,
           dirty: false,
         };
@@ -160,7 +152,7 @@ export function SettingsView() {
     } finally {
       setLoadingData(false);
     }
-  }, [backend, session, t]);
+  }, [backend, router, session, t]);
 
   useEffect(() => {
     void loadAuxData();
@@ -183,9 +175,10 @@ export function SettingsView() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
-  const handleBackClick = (e: MouseEvent<HTMLAnchorElement>) => {
+  const handleNavigateClick = (e: MouseEvent<HTMLAnchorElement>, href: string) => {
     if (hasUnsavedChanges) {
       e.preventDefault();
+      setPendingExit({ type: 'href', href });
       setLeaveDialogOpen(true);
     }
   };
@@ -326,8 +319,11 @@ export function SettingsView() {
   const handleChangePassword = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setPasswordError(null);
-    if (newPassword.length < 8) {
-      setPasswordError(t('settings.account.passwordTooShort'));
+    const minLength = mode === 'live' ? 12 : 8;
+    if (newPassword.length < minLength) {
+      setPasswordError(
+        t(mode === 'live' ? 'settings.account.passwordTooShortLive' : 'settings.account.passwordTooShort'),
+      );
       return;
     }
     if (newPassword !== repeatPassword) {
@@ -338,22 +334,24 @@ export function SettingsView() {
     try {
       const res = await backend.changePassword(newPassword);
       if (!res.ok) {
-        setPasswordError(t('settings.account.passwordError'));
-        toast({ message: t('settings.account.passwordError'), tone: 'error' });
+        const msg = res.error ? describeError(lang, res.error) : t('settings.account.passwordErrorGeneric');
+        setPasswordError(msg);
+        toast({ message: msg, tone: 'error' });
         return;
       }
       setNewPassword('');
       setRepeatPassword('');
       toast({ message: t('settings.account.passwordSavedToast'), tone: 'success' });
-    } catch {
-      setPasswordError(t('settings.account.passwordError'));
-      toast({ message: t('settings.account.passwordError'), tone: 'error' });
+    } catch (err: unknown) {
+      const msg = describeError(lang, err);
+      setPasswordError(msg);
+      toast({ message: msg, tone: 'error' });
     } finally {
       setSavingPassword(false);
     }
   };
 
-  const handleSignOut = async () => {
+  const performSignOut = async () => {
     setSigningOut(true);
     try {
       await backend.signOut();
@@ -366,6 +364,19 @@ export function SettingsView() {
       setSigningOut(false);
     }
   };
+
+  const handleSignOutClick = () => {
+    if (hasUnsavedChanges) {
+      setPendingExit({ type: 'signout' });
+      setLeaveDialogOpen(true);
+      return;
+    }
+    void performSignOut();
+  };
+
+  if (!session) {
+    return null;
+  }
 
   const jumpToSection = (id: SectionId) => {
     setActiveSection(id);
@@ -380,7 +391,7 @@ export function SettingsView() {
       <header className={styles.header}>
         <div className={styles.headerInner}>
           <div className={styles.topRow}>
-            <Link href="/mail/" className={styles.backLink} onClick={handleBackClick}>
+            <Link href="/mail/" className={styles.backLink} onClick={(e) => handleNavigateClick(e, '/mail/')}>
               ← {t('settings.backToMail')}
             </Link>
             {hasUnsavedChanges && (
@@ -766,6 +777,7 @@ export function SettingsView() {
                         variant="secondary"
                         size="sm"
                         icon="edit"
+                        disabled={editingTemplateId !== null}
                         onClick={() => handleStartEditTemplate(tpl)}
                       >
                         {t('settings.templates.editBtn')}
@@ -799,7 +811,7 @@ export function SettingsView() {
                 variant="secondary"
                 icon="logout"
                 loading={signingOut}
-                onClick={() => void handleSignOut()}
+                onClick={handleSignOutClick}
               >
                 {t('auth.signOut')}
               </Button>
@@ -828,7 +840,11 @@ export function SettingsView() {
 
             {mode === 'demo' && (
               <div>
-                <Link href="/demo-admin/" className={styles.demoAdminLink}>
+                <Link
+                  href="/demo-admin/"
+                  className={styles.demoAdminLink}
+                  onClick={(e) => handleNavigateClick(e, '/demo-admin/')}
+                >
                   {t('settings.account.demoUsersLink')} →
                 </Link>
               </div>
@@ -980,20 +996,35 @@ export function SettingsView() {
       {/* Leave with unsaved changes confirmation dialog */}
       <Dialog
         open={leaveDialogOpen}
-        onClose={() => setLeaveDialogOpen(false)}
+        onClose={() => {
+          setLeaveDialogOpen(false);
+          setPendingExit(null);
+        }}
         title={t('settings.leaveConfirmTitle')}
         description={t('settings.leaveConfirmText')}
         closeLabel={t('common.close')}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setLeaveDialogOpen(false)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setLeaveDialogOpen(false);
+                setPendingExit(null);
+              }}
+            >
               {t('settings.stay')}
             </Button>
             <Button
               variant="danger"
               onClick={() => {
+                const exit = pendingExit;
                 setLeaveDialogOpen(false);
-                router.push('/mail/');
+                setPendingExit(null);
+                if (exit?.type === 'signout') {
+                  void performSignOut();
+                } else {
+                  router.push(exit?.href ?? '/mail/');
+                }
               }}
             >
               {t('settings.leaveDiscard')}

@@ -98,11 +98,9 @@ export function DemoAdminView() {
     setSigningInEmail(targetEmail);
     setSignInError(null);
     try {
-      await backend.signOut();
       const res = await backend.signIn(targetEmail, pwd);
       if (!res.ok) {
         setSignInError(mapAuthError(res.error, online, t));
-        await refreshSession();
         return false;
       }
       recentPasswordsRef.current.set(targetEmail.toLowerCase(), pwd);
@@ -113,7 +111,6 @@ export function DemoAdminView() {
     } catch (err: unknown) {
       const code = err instanceof Error ? err.message : String(err);
       setSignInError(mapAuthError(code, online, t));
-      await refreshSession().catch(() => undefined);
       return false;
     } finally {
       setSigningInEmail(null);
@@ -125,10 +122,11 @@ export function DemoAdminView() {
     if (remembered) {
       const ok = await performSignInAs(u.email, remembered);
       if (ok) return;
+    } else {
+      setSignInError(null);
     }
     setSignInTarget(u);
     setSignInPassword('');
-    setSignInError(null);
   };
 
   const handleConfirmSignInDialog = async (e: FormEvent<HTMLFormElement>) => {
@@ -177,19 +175,23 @@ export function DemoAdminView() {
         mailboxAddresses,
       });
       recentPasswordsRef.current.set(cleanEmail, password);
-      const updated = await backend.listDemoUsers();
-      setUsers(updated);
       setName('');
       setEmail('');
       setPassword('');
       setRole('member');
       toast({ message: t('demoAdmin.createdToast', { email: cleanEmail }), tone: 'success' });
+      try {
+        const updated = await backend.listDemoUsers();
+        setUsers(updated);
+      } catch {
+        setLoadError(t('common.error'));
+      }
     } catch (err: unknown) {
       const code = err instanceof Error ? err.message : String(err);
       if (code === 'demo:user-exists') {
         setCreateError(t('demoAdmin.errorUserExists'));
       } else {
-        setCreateError(t('demoAdmin.errorInvalidUser'));
+        setCreateError(t('common.error'));
       }
     } finally {
       setCreating(false);
@@ -201,11 +203,15 @@ export function DemoAdminView() {
     try {
       await backend.resetDemo();
       recentPasswordsRef.current.clear();
-      await refreshSession();
-      const freshUsers = await backend.listDemoUsers();
-      setUsers(freshUsers);
       setResetOpen(false);
       toast({ message: t('demoAdmin.resetDoneToast'), tone: 'success' });
+      try {
+        await refreshSession();
+        const freshUsers = await backend.listDemoUsers();
+        setUsers(freshUsers);
+      } catch {
+        setLoadError(t('common.error'));
+      }
     } catch {
       toast({ message: t('common.error'), tone: 'error' });
     } finally {
