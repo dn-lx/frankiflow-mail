@@ -112,7 +112,7 @@ function makeMessage(input: SeedMsgInput): Message {
 
 export async function createSeedState(nowMs: number = Date.now()): Promise<DemoState> {
   const demoUserId = 'user-demo-admin';
-  const passwordHash = await hashPassword('demo1234');
+  const { salt: passwordSalt, hash: passwordHash } = await hashPassword('demo1234');
 
   const mailboxes: Mailbox[] = [
     {
@@ -491,7 +491,7 @@ export async function createSeedState(nowMs: number = Date.now()): Promise<DemoS
       timestamp: isoOffset(nowMs, -1, -6, 0),
     }),
 
-    // 10. HTML Newsletter 1 (remote image + 1x1 tracking pixel)
+    // 10. HTML Newsletter 1 (intentionally remote images on reserved example domains to demonstrate image blocking)
     makeMessage({
       id: 'msg-10',
       threadId: 'th-10',
@@ -509,7 +509,7 @@ export async function createSeedState(nowMs: number = Date.now()): Promise<DemoS
       timestamp: isoOffset(nowMs, -1, -8, 0),
     }),
 
-    // 11. HTML Newsletter 2 (remote image + 1x1 tracking pixel)
+    // 11. HTML Newsletter 2 (intentionally remote images on reserved example domains to demonstrate image blocking)
     makeMessage({
       id: 'msg-11',
       threadId: 'th-11',
@@ -1181,6 +1181,7 @@ export async function createSeedState(nowMs: number = Date.now()): Promise<DemoS
         name: 'Demo Admin',
         role: 'admin',
         mailboxAddresses: ['info@frankiflow.de', 'team@frankiflow.de'],
+        passwordSalt,
         passwordHash,
       },
     ],
