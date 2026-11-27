@@ -327,9 +327,15 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
   // Tab title with the inbox unread count.
   const labelName = view.labelId ? meta.labels.find((l) => l.id === view.labelId)?.name : undefined;
   const folderName = labelName ?? t(`folder.${view.folder}`);
-  const listTitle = view.search ? `${t('shell.searchResults')} · ${folderName}` : folderName;
+  const listTitle = view.search ? (isPhone ? t('shell.search') : `${t('shell.search')} · ${folderName}`) : folderName;
   const activeMailbox = mailboxId ? meta.mailboxes?.find((m) => m.id === mailboxId) : undefined;
   const activeMailboxText = activeMailbox ? t('shell.activeMailbox', { mailbox: activeMailbox.address }) : '';
+  const listSubtitle =
+    view.search && isPhone
+      ? activeMailboxText
+        ? `${folderName} · ${activeMailboxText}`
+        : folderName
+      : activeMailboxText || undefined;
   const inboxUnread = counts.inbox ?? 0;
   const docTitle = inboxUnread > 0 ? t('shell.titleUnread', { count: inboxUnread, folder: folderName }) : t('shell.title', { folder: folderName });
   useEffect(() => {
@@ -438,7 +444,7 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
               labelId={view.labelId}
               search={view.search}
               title={listTitle}
-              subtitle={activeMailbox ? activeMailboxText : undefined}
+              subtitle={listSubtitle}
               labels={meta.labels}
               ownMailboxes={meta.mailboxes}
               openId={view.threadId}
@@ -504,7 +510,9 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
             aria-current={view.search ? 'page' : undefined}
             onClick={focusSearch}
           >
-            <Icon name="search" size={22} />
+            <span className={styles.bottomIcon}>
+              <Icon name="search" size={22} />
+            </span>
             <span>{t('shell.search')}</span>
           </button>
           <button type="button" className={[styles.bottomItem, styles.bottomCompose].join(' ')} onClick={compose}>
@@ -521,7 +529,9 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
             aria-controls="mail-sidebar"
             onClick={() => setDrawerOpen(true)}
           >
-            <Icon name="menu" size={22} />
+            <span className={styles.bottomIcon}>
+              <Icon name="menu" size={22} />
+            </span>
             <span>
               {t('shell.folders')}
               <span className="sr-only"> – {t('shell.openMenu')}</span>

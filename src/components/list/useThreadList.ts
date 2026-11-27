@@ -205,21 +205,19 @@ export function useThreadList(query: ThreadListQuery, own: readonly OwnIdentity[
   }, [backend, refresh]);
 
   // Snooze / schedule times are not in ThreadSummary: fetch them for the (small) Snoozed and Scheduled lists.
-  // Sent / Drafts / Scheduled rows show recipients: fetched only when the summary's participants
-  // contain nobody but the user's own mailboxes.
+  // Sent / Drafts / Scheduled rows (and outbound-only threads in any view) show recipients: fetched only
+  // when the summary's participants contain nobody but the user's own mailboxes.
   const needsTimes = query.folder === 'snoozed' || query.folder === 'scheduled';
-  const needsRecipients = showsRecipients(query.folder);
-  const needsExtras = needsTimes || needsRecipients;
+  const forceRecipients = showsRecipients(query.folder);
   const extrasKeys = useRef(new Map<string, string>());
   useEffect(() => {
-    if (!needsExtras) return;
-    // Wait for the own mailboxes, otherwise every row would look like it needs a fetch.
-    if (needsRecipients && !needsTimes && !own) return;
+    // Wait for own mailboxes unless we only need snooze/schedule times, otherwise every row looks own-only.
+    if (!needsTimes && !own) return;
     const g = gen.current;
     const todo = base.filter((t) => {
       if (extrasKeys.current.get(t.id) === `${t.latestMessageId}|${t.lastMessageAt}`) return false;
       if (needsTimes) return true;
-      return otherParticipants(t.participants, own ?? []).length === 0;
+      return !!own && otherParticipants(t.participants, own).length === 0;
     });
     if (todo.length === 0) return;
     for (const t of todo) extrasKeys.current.set(t.id, `${t.latestMessageId}|${t.lastMessageAt}`);
@@ -230,7 +228,10 @@ export function useThreadList(query: ThreadListQuery, own: readonly OwnIdentity[
             const snoozed = msgs.filter((m) => m.snoozedUntil).map((m) => m.snoozedUntil as string).sort();
             const scheduled = msgs.filter((m) => m.scheduledAt).map((m) => m.scheduledAt as string).sort();
             const ex: ThreadExtras = { snoozedUntil: snoozed[snoozed.length - 1], scheduledAt: scheduled[0] };
-            if (needsRecipients) ex.recipients = outboundRecipients(msgs);
+            const latest = msgs[msgs.length - 1];
+            if (forceRecipients || latest?.direction === 'outbound' || latest?.direction === 'draft') {
+              ex.recipients = outboundRecipients(msgs);
+            }
             return [t.id, ex] as const;
           },
           () => {
@@ -249,7 +250,7 @@ export function useThreadList(query: ThreadListQuery, own: readonly OwnIdentity[
         return next;
       });
     });
-  }, [base, needsExtras, needsTimes, needsRecipients, own, backend]);
+  }, [base, needsTimes, forceRecipients, own, backend]);
   useEffect(() => {
     extrasKeys.current = new Map();
   }, [key]);

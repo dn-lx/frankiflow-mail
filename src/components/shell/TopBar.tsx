@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type Ref } from 'react';
 import { useApp } from '@/components/providers/AppProvider';
-import { Badge, Button, Icon, IconButton } from '@/components/ui';
+import { Button, DemoBadge, Icon, IconButton } from '@/components/ui';
 import {
   chipQuery,
   combineQuery,
@@ -179,12 +179,7 @@ export function TopBar({
         </form>
       </div>
       <div className={styles.topActions}>
-        {mode === 'demo' && !hideDemo && (
-          <Badge tone="warning" title={t('demo.badgeLabel')} className={[styles.demoBadge, styles.topBarDemo].join(' ')}>
-            <span aria-hidden="true">{t('demo.badge')}</span>
-            <span className="sr-only">{t('demo.badgeLabel')}</span>
-          </Badge>
-        )}
+        {mode === 'demo' && !hideDemo && <DemoBadge className={styles.topBarDemo} />}
         {onCompose && (
           <Button variant="primary" icon="edit" className={styles.topCompose} onClick={onCompose} aria-keyshortcuts="c">
             {t('shell.compose')}
