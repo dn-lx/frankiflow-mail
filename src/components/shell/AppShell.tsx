@@ -81,14 +81,17 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
 
   useEffect(() => {
     setSelection(new Set());
+    setActiveId(sRef.current.view.threadId);
   }, [queryKey]);
 
   useEffect(() => {
     if (view.threadId) setActiveId(view.threadId);
   }, [view.threadId]);
 
+  const drawerMode = !isDesktop;
+
   // Latest values for stable callbacks and the global key handler.
-  const s = { view, navigate, order, activeId, selection, isPhone, data, reading };
+  const s = { view, navigate, order, activeId, selection, isPhone, data, reading, drawerOpen, drawerMode };
   const sRef = useRef(s);
   sRef.current = s;
 
@@ -188,9 +191,10 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
-      if (e.target instanceof HTMLElement && e.target.closest('[role="menu"], dialog')) return;
-      if (document.querySelector('dialog[open]')) return;
+      if (e.target instanceof HTMLElement && e.target.closest('[role="menu"], dialog, [role="dialog"][aria-modal="true"]')) return;
+      if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return;
       const cur = sRef.current;
+      if (cur.drawerOpen) return;
       const key = e.key;
 
       if (gPending) {
@@ -204,8 +208,9 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
         return;
       }
 
-      const activeThread = () => cur.data.threads.find((th) => th.id === (cur.activeId ?? cur.order[0]));
-      const targets = () => (cur.selection.size > 0 ? cur.order.filter((id) => cur.selection.has(id)) : cur.activeId ? [cur.activeId] : []);
+      const active = cur.activeId && cur.order.includes(cur.activeId) ? cur.activeId : cur.order[0];
+      const activeThread = () => cur.data.threads.find((th) => th.id === active);
+      const targets = () => (cur.selection.size > 0 ? cur.order.filter((id) => cur.selection.has(id)) : active ? [active] : []);
 
       switch (key) {
         case 'g':
@@ -242,7 +247,7 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
           return;
         }
         case 'x': {
-          const id = cur.activeId ?? cur.order[0];
+          const id = active;
           if (!id) return;
           e.preventDefault();
           setSelection((sel) => {
@@ -343,7 +348,6 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
   const listVisible = !(reading && pane === 'off');
   const readerVisible = reading || pane !== 'off';
   const showTopBar = !(isPhone && reading);
-  const drawerMode = !isDesktop;
 
   const shellStyle = { '--list-w': `${listWidth}px` } as CSSProperties;
 
@@ -355,7 +359,7 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
       data-reading={reading ? 'true' : 'false'}
       style={shellStyle}
     >
-      <a href={`#${LIST_ID}`} className={styles.skip}>
+      <a href={`#${LIST_ID}`} className={styles.skip} inert={drawerMode && drawerOpen}>
         {t('shell.skipToList')}
       </a>
 
@@ -446,7 +450,7 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
       </main>
 
       {isPhone && !reading && (
-        <nav className={styles.bottomBar} aria-label={t('shell.bottomNav')}>
+        <nav className={styles.bottomBar} aria-label={t('shell.bottomNav')} inert={drawerMode && drawerOpen}>
           <Link
             href={hrefFor({ folder: 'inbox', labelId: null, search: null, threadId: null })}
             className={styles.bottomItem}
