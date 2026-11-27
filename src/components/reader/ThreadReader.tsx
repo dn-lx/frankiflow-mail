@@ -87,7 +87,19 @@ export function ThreadReader({
   const [deletingForever, setDeletingForever] = useState(false);
   const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
   const [toolbarStage, setToolbarStage] = useState<ToolbarStage>(4);
+  const [isPhoneViewport, setIsPhoneViewport] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 699px)');
+    const update = () => setIsPhoneViewport(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+
+  const showBackButton = isPhoneViewport || settings.readingPane === 'off';
 
   // Thread id marked read (or being marked read); reset on failure so a later load retries.
   const markedReadThreadRef = useRef<string | null>(null);
@@ -695,7 +707,7 @@ export function ThreadReader({
     return (
       <section className={styles.root} aria-busy="true" aria-label={t('common.loading')}>
         <div className={styles.toolbar} ref={toolbarRef}>
-          <IconButton icon="chevron-left" label={t('reader.back')} onClick={onBack} />
+          {showBackButton && <IconButton icon="chevron-left" label={t('reader.back')} onClick={onBack} />}
           <Skeleton width={180} height={24} />
         </div>
         <div className={styles.scrollBody}>
@@ -718,7 +730,7 @@ export function ThreadReader({
     return (
       <section className={styles.root}>
         <div className={styles.toolbar} ref={toolbarRef}>
-          <IconButton icon="chevron-left" label={t('reader.back')} onClick={onBack} />
+          {showBackButton && <IconButton icon="chevron-left" label={t('reader.back')} onClick={onBack} />}
         </div>
         <div className={styles.stateCenter}>
           <EmptyState
@@ -740,7 +752,7 @@ export function ThreadReader({
     return (
       <section className={styles.root}>
         <div className={styles.toolbar} ref={toolbarRef}>
-          <IconButton icon="chevron-left" label={t('reader.back')} onClick={onBack} />
+          {showBackButton && <IconButton icon="chevron-left" label={t('reader.back')} onClick={onBack} />}
         </div>
         <div className={styles.stateCenter}>
           <EmptyState
@@ -762,7 +774,7 @@ export function ThreadReader({
     <section className={styles.root} aria-label={subject}>
       <header className={styles.toolbar} ref={toolbarRef}>
         <div className={styles.toolbarGroup}>
-          <IconButton icon="chevron-left" label={t('reader.back')} onClick={onBack} />
+          {showBackButton && <IconButton icon="chevron-left" label={t('reader.back')} onClick={onBack} />}
           <IconButton
             icon="archive"
             label={`${t('reader.archive')} (e)`}
@@ -868,6 +880,7 @@ export function ThreadReader({
               key={msg.id}
               message={msg}
               defaultExpanded={idx === messages.length - 1}
+              isLatest={idx === messages.length - 1}
               canCollapse={messages.length > 1}
               userAddresses={userAddresses}
               onReply={handleReply}

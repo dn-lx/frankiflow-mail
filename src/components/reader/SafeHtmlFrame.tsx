@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '@/components/providers/AppProvider';
 import { Button } from '@/components/ui';
 import { MESSAGE_FRAME_SANDBOX, cspMetaTag } from './frame-policy';
@@ -148,33 +148,91 @@ function foldQuotedHtml(sanitizedHtml: string, toggleLabel: string): string {
   }
 }
 
+function parseCssPx(styleText: string, prop: 'width' | 'height'): number | null {
+  const re = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*(\\d+(?:\\.\\d+)?)px\\b`, 'i');
+  const m = re.exec(styleText);
+  return m ? Number(m[1]) : null;
+}
+
+function parseAttrPx(raw: string | null): number | null {
+  if (!raw) return null;
+  const cleaned = raw.trim().toLowerCase().replace(/px$/, '');
+  if (!/^\d+(\.\d+)?$/.test(cleaned)) return null;
+  const n = Number(cleaned);
+  return n > 0 ? n : null;
+}
+
 /**
- * Estimates a usable iframe height from sanitized HTML content.
+ * Estimates a generous iframe height from sanitized HTML content at the current container width.
  *
  * Because the iframe intentionally omits `allow-same-origin`, the parent window
  * cannot read `contentDocument.body.scrollHeight`. We therefore compute a
- * content-length heuristic with internal scrolling and pair it with an explicit
- * expand/collapse toggle for long newsletters.
+ * content-based estimate (characters ÷ chars-per-line, blocks, tables, and images
+ * with their explicit dimensions or a 200px default) × 1.25 safety factor,
+ * clamped between 120px and 80vh, while keeping the iframe internally scrollable.
  */
-/**
- * Estimates a usable iframe height from sanitized HTML content.
- *
- * Because the iframe intentionally omits `allow-same-origin`, the parent window
- * cannot read `contentDocument.body.scrollHeight`. We therefore compute a
- * content-length heuristic with internal scrolling and pair it with an explicit
- * expand/collapse toggle when the estimate may be too small.
- */
-function estimateFrameHeight(html: string, allowRemoteImages: boolean): { height: number; mayOverflow: boolean } {
-  const withoutStyle = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
+function estimateContentHeight(html: string, containerWidth: number): number {
+  const contentWidth = Math.max(160, containerWidth - 32);
+  const charsPerLine = Math.max(18, Math.floor(contentWidth / 7.5));
+
+  if (typeof DOMParser !== 'undefined') {
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      for (const s of Array.from(doc.body.querySelectorAll('style'))) s.remove();
+      for (const d of Array.from(doc.body.querySelectorAll('details.ff-quote'))) {
+        const summary = d.querySelector('summary');
+        d.textContent = '';
+        if (summary) d.appendChild(summary);
+      }
+
+      const textLen = (doc.body.textContent ?? '').replace(/\s+/g, ' ').trim().length;
+      const textLines = textLen > 0 ? Math.ceil(textLen / charsPerLine) : 0;
+      const blockCount = doc.body.querySelectorAll(
+        'p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre, hr, section, article, details',
+      ).length;
+      const brCount = doc.body.querySelectorAll('br').length;
+      const tableCount = doc.body.querySelectorAll('table').length;
+      const rowCount = doc.body.querySelectorAll('tr').length;
+
+      let imgHeight = 0;
+      for (const img of Array.from(doc.body.querySelectorAll('img'))) {
+        const styleText = img.getAttribute('style') ?? '';
+        const h = parseCssPx(styleText, 'height') ?? parseAttrPx(img.getAttribute('height'));
+        const w = parseCssPx(styleText, 'width') ?? parseAttrPx(img.getAttribute('width'));
+        if (h !== null && h > 0) {
+          imgHeight += w !== null && w > contentWidth && w > 0 ? Math.round(h * (contentWidth / w)) : h;
+        } else {
+          imgHeight += 200;
+        }
+      }
+
+      const raw =
+        32 +
+        textLines * 24 +
+        blockCount * 14 +
+        brCount * 22 +
+        tableCount * 20 +
+        rowCount * 28 +
+        imgHeight;
+      return Math.ceil(raw * 1.25);
+    } catch {
+      /* fall through to regex fallback */
+    }
+  }
+
+  const withoutStyle = html
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<details\b[^>]*class="ff-quote"[^>]*>[\s\S]*?<\/details>/gi, '<details></details>');
   const textLen = withoutStyle.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().length;
-  const blockCount = (withoutStyle.match(/<(br|p|div|tr|li|h[1-6]|blockquote|section|article|table)\b/gi) ?? []).length;
+  const blockCount = (
+    withoutStyle.match(/<(br|p|div|li|h[1-6]|blockquote|pre|hr|section|article|details)\b/gi) ?? []
+  ).length;
+  const tableCount = (withoutStyle.match(/<table\b/gi) ?? []).length;
+  const rowCount = (withoutStyle.match(/<tr\b/gi) ?? []).length;
   const imgCount = (withoutStyle.match(/<img\b/gi) ?? []).length;
-  const linesFromText = Math.ceil(textLen / 62);
-  const imgHeight = imgCount * (allowRemoteImages ? 180 : 36);
-  const raw = 44 + linesFromText * 24 + blockCount * 16 + imgHeight;
-  const height = Math.max(80, Math.min(540, raw));
-  const mayOverflow = raw > 240 || imgCount > 0 || blockCount > 6 || html.length > 900;
-  return { height, mayOverflow };
+  const textLines = textLen > 0 ? Math.ceil(textLen / charsPerLine) : 0;
+  const raw = 32 + textLines * 24 + blockCount * 14 + tableCount * 20 + rowCount * 28 + imgCount * 200;
+  return Math.ceil(raw * 1.25);
 }
 
 function buildSrcDoc(bodyHtml: string, allowRemoteImages: boolean, theme: 'light' | 'dark' | 'system'): string {
@@ -196,6 +254,32 @@ ${cspMetaTag(allowRemoteImages)}
 export function SafeHtmlFrame({ html, title, allowRemoteImages = false }: SafeHtmlFrameProps) {
   const { t, settings } = useApp();
   const [expanded, setExpanded] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(600);
+  const [viewportHeight, setViewportHeight] = useState(800);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const el = wrapperRef.current;
+    const update = () => {
+      if (el) {
+        const w = el.getBoundingClientRect().width;
+        if (w > 0) setContainerWidth(w);
+      }
+      if (window.innerHeight > 0) setViewportHeight(window.innerHeight);
+    };
+    update();
+    let ro: ResizeObserver | null = null;
+    if (el && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(update);
+      ro.observe(el);
+    }
+    window.addEventListener('resize', update);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, []);
 
   const toggleLabel = t('reader.toggleQuoted');
   const foldedHtml = useMemo(() => foldQuotedHtml(html, toggleLabel), [html, toggleLabel]);
@@ -203,14 +287,23 @@ export function SafeHtmlFrame({ html, title, allowRemoteImages = false }: SafeHt
     () => buildSrcDoc(foldedHtml, allowRemoteImages, settings.theme),
     [foldedHtml, allowRemoteImages, settings.theme],
   );
-  const { height: compactHeight, mayOverflow } = useMemo(
-    () => estimateFrameHeight(html, allowRemoteImages),
-    [html, allowRemoteImages],
+  const rawEstimate = useMemo(
+    () => estimateContentHeight(foldedHtml, containerWidth),
+    // Recompute when images are allowed as requested, as well as on content or width changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [foldedHtml, containerWidth, allowRemoteImages],
   );
-  const height = expanded ? Math.max(680, Math.min(1600, Math.round(compactHeight * 2.2))) : compactHeight;
+
+  const minHeight = 120;
+  const maxCompactHeight = Math.max(minHeight, Math.round(viewportHeight * 0.8));
+  const maxExpandedHeight = Math.max(maxCompactHeight, Math.round(viewportHeight * 4));
+  const hitsClamp = rawEstimate > maxCompactHeight;
+  const compactHeight = Math.max(minHeight, Math.min(maxCompactHeight, rawEstimate));
+  const expandedHeight = Math.min(Math.round(rawEstimate * 2), maxExpandedHeight);
+  const height = expanded && hitsClamp ? expandedHeight : compactHeight;
 
   return (
-    <div className={styles.wrapper}>
+    <div className={styles.wrapper} ref={wrapperRef}>
       <div className={styles.paper}>
         <iframe
           className={styles.frame}
@@ -220,7 +313,7 @@ export function SafeHtmlFrame({ html, title, allowRemoteImages = false }: SafeHt
           style={{ height: `${height}px` }}
         />
       </div>
-      {mayOverflow && (
+      {hitsClamp && (
         <div className={styles.controls}>
           <Button
             variant="ghost"

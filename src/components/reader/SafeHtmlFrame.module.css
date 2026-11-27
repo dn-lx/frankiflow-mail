@@ -10,13 +10,13 @@
 .paper {
   background: #ffffff;
   border-radius: var(--radius-sm);
-  overflow: hidden;
 }
 
 .frame {
   display: block;
   width: 100%;
   border: 0;
+  border-radius: var(--radius-sm);
   background: #ffffff;
 }
 
