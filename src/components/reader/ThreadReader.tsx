@@ -57,47 +57,71 @@ export function ThreadReader({
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deletingForever, setDeletingForever] = useState(false);
 
+  // Thread id marked read (or being marked read); reset on failure so a later load retries.
   const markedReadThreadRef = useRef<string | null>(null);
+  // Thread currently shown; responses for any other thread are stale and ignored.
+  const activeThreadRef = useRef<string>(threadId);
+
+  const markThreadRead = useCallback(
+    async (requested: string, msgs: Message[], silent: boolean) => {
+      if (markedReadThreadRef.current === requested) return;
+      const unreadIds = msgs.filter((m) => !m.isRead).map((m) => m.id);
+      if (unreadIds.length === 0) {
+        markedReadThreadRef.current = requested;
+        return;
+      }
+      markedReadThreadRef.current = requested;
+      try {
+        await backend.updateMessages(unreadIds, { isRead: true });
+        if (activeThreadRef.current !== requested) return;
+        setMessages((prev) =>
+          prev.map((m) => (unreadIds.includes(m.id) ? { ...m, isRead: true } : m)),
+        );
+      } catch (err) {
+        if (markedReadThreadRef.current === requested) markedReadThreadRef.current = null;
+        if (!silent && activeThreadRef.current === requested) {
+          toast({ message: describeError(lang, err), tone: 'error' });
+        }
+      }
+    },
+    [backend, lang, toast],
+  );
 
   const loadThread = useCallback(
     async (silent = false) => {
+      const requested = threadId;
       if (!silent) {
         setLoading(true);
         setError(null);
       }
+      let msgs: Message[] = [];
       try {
-        const [msgs, lbls, mbs] = await Promise.all([
-          backend.getThread(threadId),
+        const [loaded, lbls, mbs] = await Promise.all([
+          backend.getThread(requested),
           backend.listLabels(),
           backend.listMailboxes(),
         ]);
-        setMessages(msgs);
+        if (activeThreadRef.current !== requested) return;
+        msgs = loaded;
+        setMessages(loaded);
         setLabels(lbls);
         setMailboxes(mbs);
-
-        if (markedReadThreadRef.current !== threadId) {
-          markedReadThreadRef.current = threadId;
-          const unreadIds = msgs.filter((m) => !m.isRead).map((m) => m.id);
-          if (unreadIds.length > 0) {
-            await backend.updateMessages(unreadIds, { isRead: true });
-            setMessages((prev) =>
-              prev.map((m) => (unreadIds.includes(m.id) ? { ...m, isRead: true } : m)),
-            );
-          }
-        }
       } catch (err) {
-        if (!silent) setError(describeError(lang, err));
+        if (!silent && activeThreadRef.current === requested) setError(describeError(lang, err));
+        return;
       } finally {
-        if (!silent) setLoading(false);
+        if (!silent && activeThreadRef.current === requested) setLoading(false);
       }
+      await markThreadRead(requested, msgs, silent);
     },
-    [backend, threadId, lang],
+    [backend, threadId, lang, markThreadRead],
   );
 
   useEffect(() => {
+    activeThreadRef.current = threadId;
     markedReadThreadRef.current = null;
     void loadThread(false);
-  }, [loadThread]);
+  }, [threadId, loadThread]);
 
   useEffect(() => {
     return backend.onChange(() => {
@@ -146,16 +170,27 @@ export function ThreadReader({
           tone: 'info',
           actionLabel: t('common.undo'),
           onAction: () => {
-            const byFolder = new Map<Message['folder'], string[]>();
+            // Restore folder and snoozedUntil together, grouped by their pair.
+            const groups = new Map<
+              string,
+              { folder: Message['folder']; snoozedUntil: string | null; ids: string[] }
+            >();
             for (const s of snapshot) {
-              const list = byFolder.get(s.folder) ?? [];
-              list.push(s.id);
-              byFolder.set(s.folder, list);
+              const key = `${s.folder}\u0000${s.snoozedUntil ?? ''}`;
+              const group = groups.get(key) ?? {
+                folder: s.folder,
+                snoozedUntil: s.snoozedUntil,
+                ids: [],
+              };
+              group.ids.push(s.id);
+              groups.set(key, group);
             }
-            for (const [f, ids] of byFolder) {
-              void backend.updateMessages(ids, { folder: f }).catch((err) => {
-                toast({ message: describeError(lang, err), tone: 'error' });
-              });
+            for (const g of groups.values()) {
+              void backend
+                .updateMessages(g.ids, { folder: g.folder, snoozedUntil: g.snoozedUntil })
+                .catch((err) => {
+                  toast({ message: describeError(lang, err), tone: 'error' });
+                });
             }
           },
         });
@@ -192,6 +227,7 @@ export function ThreadReader({
   const handleToggleStar = useCallback(async () => {
     if (allIds.length === 0) return;
     const next = !isStarred;
+    const previous = new Map(messages.map((m) => [m.id, m.isStarred]));
     setMessages((prev) => prev.map((m) => ({ ...m, isStarred: next })));
     try {
       await backend.updateMessages(allIds, { isStarred: next });
@@ -200,10 +236,12 @@ export function ThreadReader({
         tone: 'info',
       });
     } catch (err) {
-      setMessages((prev) => prev.map((m) => ({ ...m, isStarred: !next })));
+      setMessages((prev) =>
+        prev.map((m) => ({ ...m, isStarred: previous.get(m.id) ?? m.isStarred })),
+      );
       toast({ message: describeError(lang, err), tone: 'error' });
     }
-  }, [allIds, isStarred, backend, toast, t, lang]);
+  }, [allIds, messages, isStarred, backend, toast, t, lang]);
 
   const handleTogglePin = useCallback(async () => {
     if (allIds.length === 0) return;
@@ -224,15 +262,19 @@ export function ThreadReader({
   const handlePriority = useCallback(
     async (next: Priority) => {
       if (allIds.length === 0) return;
+      const previous = new Map(messages.map((m) => [m.id, m.priority]));
       setMessages((prev) => prev.map((m) => ({ ...m, priority: next })));
       try {
         await backend.updateMessages(allIds, { priority: next });
         toast({ message: t('reader.toast.priority'), tone: 'info' });
       } catch (err) {
+        setMessages((prev) =>
+          prev.map((m) => ({ ...m, priority: previous.get(m.id) ?? m.priority })),
+        );
         toast({ message: describeError(lang, err), tone: 'error' });
       }
     },
-    [allIds, backend, toast, t, lang],
+    [allIds, messages, backend, toast, t, lang],
   );
 
   const handleMarkUnread = useCallback(async () => {
@@ -249,7 +291,11 @@ export function ThreadReader({
   const handleSnooze = useCallback(
     async (isoUntil: string) => {
       if (allIds.length === 0) return;
-      const snapshot = messages.map((m) => ({ id: m.id, folder: m.folder }));
+      const snapshot = messages.map((m) => ({
+        id: m.id,
+        folder: m.folder,
+        snoozedUntil: m.snoozedUntil ?? null,
+      }));
       try {
         await backend.updateMessages(allIds, { folder: 'snoozed', snoozedUntil: isoUntil });
         onRemoved();
@@ -259,7 +305,11 @@ export function ThreadReader({
           actionLabel: t('common.undo'),
           onAction: () => {
             for (const s of snapshot) {
-              void backend.updateMessages([s.id], { folder: s.folder, snoozedUntil: null });
+              void backend
+                .updateMessages([s.id], { folder: s.folder, snoozedUntil: s.snoozedUntil })
+                .catch((err) => {
+                  toast({ message: describeError(lang, err), tone: 'error' });
+                });
             }
           },
         });
@@ -332,6 +382,7 @@ export function ThreadReader({
   // Reader keyboard shortcuts: r, a, f, e, #, s
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isEditableTarget(e.target)) return;
       if (document.querySelector('dialog[open]')) return;

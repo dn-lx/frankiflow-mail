@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '@/components/providers/AppProvider';
 import { Button } from '@/components/ui';
+import { MESSAGE_FRAME_SANDBOX, cspMetaTag } from './frame-policy';
 import styles from './SafeHtmlFrame.module.css';
 
 export interface SafeHtmlFrameProps {
@@ -10,6 +11,8 @@ export interface SafeHtmlFrameProps {
   html: string;
   /** Accessible title for the iframe. */
   title?: string;
+  /** Whether `https:` images may load (sets the frame CSP). Defaults to blocked. */
+  allowRemoteImages?: boolean;
 }
 
 const FRAME_CSS = `
@@ -138,10 +141,12 @@ function estimateFrameHeight(html: string): number {
   return Math.max(220, Math.min(620, estimated));
 }
 
-function buildSrcDoc(bodyHtml: string): string {
+function buildSrcDoc(bodyHtml: string, allowRemoteImages: boolean): string {
+  // The CSP meta must come first so it applies before any other content is parsed.
   return `<!doctype html>
 <html>
 <head>
+${cspMetaTag(allowRemoteImages)}
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
@@ -152,13 +157,16 @@ function buildSrcDoc(bodyHtml: string): string {
 </html>`;
 }
 
-export function SafeHtmlFrame({ html, title }: SafeHtmlFrameProps) {
+export function SafeHtmlFrame({ html, title, allowRemoteImages = false }: SafeHtmlFrameProps) {
   const { t } = useApp();
   const [expanded, setExpanded] = useState(false);
 
   const toggleLabel = t('reader.toggleQuoted');
   const foldedHtml = useMemo(() => foldQuotedHtml(html, toggleLabel), [html, toggleLabel]);
-  const srcDoc = useMemo(() => buildSrcDoc(foldedHtml), [foldedHtml]);
+  const srcDoc = useMemo(
+    () => buildSrcDoc(foldedHtml, allowRemoteImages),
+    [foldedHtml, allowRemoteImages],
+  );
   const compactHeight = useMemo(() => estimateFrameHeight(html), [html]);
   const canExpand = compactHeight >= 400 || html.length > 2200;
   const height = expanded ? Math.max(720, Math.min(1600, Math.round(compactHeight * 2.2))) : compactHeight;
@@ -169,7 +177,7 @@ export function SafeHtmlFrame({ html, title }: SafeHtmlFrameProps) {
         <iframe
           className={styles.frame}
           title={title ?? t('reader.frameTitle')}
-          sandbox="allow-popups allow-popups-to-escape-sandbox"
+          sandbox={MESSAGE_FRAME_SANDBOX}
           srcDoc={srcDoc}
           style={{ height: `${height}px` }}
         />

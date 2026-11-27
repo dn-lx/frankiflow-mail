@@ -32,11 +32,25 @@ function isImageAttachment(a: AttachmentMeta): boolean {
   return a.contentType.toLowerCase().startsWith('image/');
 }
 
+/** Only a declared `application/pdf` may be opened in a tab; the filename is attacker-controlled. */
 function isPdfAttachment(a: AttachmentMeta): boolean {
-  return (
-    a.contentType.toLowerCase() === 'application/pdf' ||
-    a.filename.toLowerCase().endsWith('.pdf')
-  );
+  return a.contentType.trim().toLowerCase() === 'application/pdf';
+}
+
+/** A `data:` URL must itself declare `application/pdf` before it may be opened. */
+function canOpenAsPdf(url: string): boolean {
+  if (/^data:/i.test(url)) return /^data:application\/pdf[;,]/i.test(url.trim());
+  return true;
+}
+
+function triggerDownload(url: string, filename: string): void {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 function formatRelativeHint(
@@ -113,7 +127,9 @@ function AttachmentItem({ attachment }: { attachment: AttachmentMeta }) {
     return () => {
       cancelled = true;
     };
-  }, [backend, attachment, isImg]);
+    // Keyed on the id: realtime reloads hand us new but equal attachment objects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backend, attachment.id, isImg]);
 
   const resolveUrl = useCallback(async (): Promise<string | null> => {
     if (url) return url;
@@ -133,18 +149,17 @@ function AttachmentItem({ attachment }: { attachment: AttachmentMeta }) {
   const handleDownload = async () => {
     const resolved = await resolveUrl();
     if (!resolved) return;
-    const a = document.createElement('a');
-    a.href = resolved;
-    a.download = attachment.filename;
-    a.rel = 'noopener noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    triggerDownload(resolved, attachment.filename);
   };
 
   const handleOpenPdf = async () => {
     const resolved = await resolveUrl();
     if (!resolved) return;
+    // Anything not positively a PDF is downloaded, never opened in a top-level tab.
+    if (!isPdf || !canOpenAsPdf(resolved)) {
+      triggerDownload(resolved, attachment.filename);
+      return;
+    }
     window.open(resolved, '_blank', 'noopener,noreferrer');
   };
 
@@ -222,6 +237,8 @@ export function MessageView({
     }
     return sanitizeEmailHtml(message.htmlBody, { allowRemoteImages });
   }, [expanded, hasHtml, message.htmlBody, allowRemoteImages]);
+
+  const showBlockedBar = sanitized.blockedImages > 0 && !allowRemoteImages;
 
   const recipientSummary = useMemo(
     () => formatRecipientSummary(message.to, message.cc, userAddresses, t),
@@ -340,29 +357,35 @@ export function MessageView({
         </div>
       )}
 
-      {sanitized.blockedImages > 0 && !allowRemoteImages && (
-        <div className={styles.privacyBar} role="region" aria-label={t('reader.imagesBlocked')}>
+      {(showBlockedBar || sanitized.hasTrackingPixel) && (
+        <div
+          className={styles.privacyBar}
+          role="region"
+          aria-label={t(showBlockedBar ? 'reader.imagesBlocked' : 'reader.trackingPixelRemoved')}
+        >
           <span className={styles.privacyText}>
             <Icon name="image" size={16} />
-            <span>{t('reader.imagesBlocked')}</span>
+            {showBlockedBar && <span>{t('reader.imagesBlocked')}</span>}
             {sanitized.hasTrackingPixel && (
               <Badge tone="neutral">{t('reader.trackingPixelRemoved')}</Badge>
             )}
           </span>
-          <span className={styles.privacyActions}>
-            <Button variant="secondary" size="sm" onClick={() => setAllowImagesLocal(true)}>
-              {t('reader.showImages')}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={handleAlwaysShowImages}>
-              {t('reader.alwaysShowImages')}
-            </Button>
-          </span>
+          {showBlockedBar && (
+            <span className={styles.privacyActions}>
+              <Button variant="secondary" size="sm" onClick={() => setAllowImagesLocal(true)}>
+                {t('reader.showImages')}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleAlwaysShowImages}>
+                {t('reader.alwaysShowImages')}
+              </Button>
+            </span>
+          )}
         </div>
       )}
 
       <div className={styles.body}>
-        {hasHtml ? (
-          <SafeHtmlFrame html={sanitized.html} />
+        {hasHtml && sanitized.html.trim() ? (
+          <SafeHtmlFrame html={sanitized.html} allowRemoteImages={allowRemoteImages} />
         ) : hasText ? (
           <PlainTextBody text={message.textBody} />
         ) : (
