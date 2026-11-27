@@ -390,3 +390,22 @@ describe('parseView and viewHref URL round-trip', () => {
     assert.equal(isFolder('unknown'), false);
   });
 });
+
+import { matchesListFilter } from '../src/components/shell/view.ts';
+describe('matchesListFilter (conversation level)', () => {
+  const t = (unreadCount: number, isStarred: boolean) => ({ unreadCount, isStarred });
+  it('unread / read follow the conversation unread count', () => {
+    assert.equal(matchesListFilter(t(1, false), 'unread'), true);
+    assert.equal(matchesListFilter(t(0, false), 'unread'), false);
+    assert.equal(matchesListFilter(t(0, false), 'read'), true);
+    assert.equal(matchesListFilter(t(2, false), 'read'), false);
+  });
+  it('a conversation with any starred message is not "unstarred"', () => {
+    assert.equal(matchesListFilter(t(0, true), 'unstarred'), false);
+    assert.equal(matchesListFilter(t(0, true), 'starred'), true);
+    assert.equal(matchesListFilter(t(0, false), 'unstarred'), true);
+  });
+  it('no filter keeps everything', () => {
+    assert.equal(matchesListFilter(t(3, true), undefined), true);
+  });
+});

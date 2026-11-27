@@ -24,6 +24,25 @@ export function buildSearchQuery(search: string | undefined, filter: ListFilter 
   return trimmed || op || undefined;
 }
 
+/**
+ * Conversation-level check for a list filter. The search operator only narrows the
+ * candidates per message (a conversation with one starred and one unstarred message
+ * matches `is:unstarred`), so rows are filtered again on the conversation's own state:
+ * "unstarred" means no starred message, "read" means no unread message.
+ */
+export function matchesListFilter(
+  thread: { unreadCount: number; isStarred: boolean },
+  filter: ListFilter | undefined,
+): boolean {
+  switch (filter) {
+    case 'unread': return thread.unreadCount > 0;
+    case 'read': return thread.unreadCount === 0;
+    case 'starred': return thread.isStarred;
+    case 'unstarred': return !thread.isStarred;
+    default: return true;
+  }
+}
+
 export interface MailView {
   /** Mailbox id or 'all'. */
   mailbox: string;

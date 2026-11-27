@@ -13,7 +13,7 @@ import {
   type ConcreteFolder,
   type OwnIdentity,
 } from '@/lib/mail/threads';
-import type { ListFilter } from '@/components/shell/view';
+import { matchesListFilter, type ListFilter } from '@/components/shell/view';
 import { FilterMenu } from './FilterMenu';
 import { ThreadRow, primaryActionFor, type RowCallbacks } from './ThreadRow';
 import type { ThreadActions } from './useThreadActions';
@@ -94,8 +94,11 @@ export function ThreadList({
   const [confirmEmpty, setConfirmEmpty] = useState(false);
   const [emptying, setEmptying] = useState(false);
 
-  const threads = data.threads;
-  const order = useMemo(() => threads.map((th) => th.id), [threads]);
+  const threads = useMemo(
+    () => (filter ? data.threads.filter((th) => matchesListFilter(th, filter)) : data.threads),
+    [data.threads, filter],
+  );
+  const order =useMemo(() => threads.map((th) => th.id), [threads]);
   const labelMap = useMemo(() => new Map(labels.map((l) => [l.id, l] as const)), [labels]);
   const effectiveActive = activeId && order.includes(activeId) ? activeId : openId && order.includes(openId) ? openId : order[0];
 

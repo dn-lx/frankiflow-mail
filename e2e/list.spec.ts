@@ -227,6 +227,8 @@ test.describe('E-Mail-Liste', () => {
       await choose(page, 'Ungelesen');
 
       const rows = threadRows(page);
+      // Count only after the filtered list has settled (no read rows left).
+      await expect(rows.filter({ hasNotText: 'Ungelesen,' })).toHaveCount(0);
       const count = await rows.count();
       expect(count).toBeGreaterThan(0);
 
