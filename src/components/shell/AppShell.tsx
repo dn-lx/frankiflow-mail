@@ -317,9 +317,18 @@ export function AppShell({ view, navigate, hrefFor }: AppShellProps) {
   const folderName = labelName ?? t(`folder.${view.folder}`);
   const listTitle = view.search ? `${t('shell.searchResults')} · ${folderName}` : folderName;
   const inboxUnread = counts.inbox ?? 0;
+  const docTitle = inboxUnread > 0 ? t('shell.titleUnread', { count: inboxUnread, folder: folderName }) : t('shell.title', { folder: folderName });
   useEffect(() => {
-    document.title = inboxUnread > 0 ? t('shell.titleUnread', { count: inboxUnread, folder: folderName }) : t('shell.title', { folder: folderName });
-  }, [inboxUnread, folderName, t]);
+    // Next re-applies the static metadata title after client navigations and hydration,
+    // which can land after this effect. Re-assert ours whenever <head> or <title> changes.
+    const apply = () => {
+      if (document.title !== docTitle) document.title = docTitle;
+    };
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [docTitle]);
 
   // Drawer (tablet / phone).
   useEffect(() => {

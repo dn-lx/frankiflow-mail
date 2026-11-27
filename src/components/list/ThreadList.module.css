@@ -331,7 +331,8 @@
   position: absolute;
   z-index: 2;
   top: 50%;
-  right: var(--space-2);
+  /* Sit left of the star column so the star stays clickable while hovering. */
+  right: calc(var(--space-2) + 40px);
   display: none;
   align-items: center;
   gap: 2px;

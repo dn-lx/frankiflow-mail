@@ -53,8 +53,9 @@ export const test = base.extend<{ guard: Guard }>({
         if (isAllowed(where) || isAllowed(msg.text())) return;
         // Playwright injects its helper script into every frame it inspects. In the reader's
         // sandboxed email frame (no allow-scripts) Chromium blocks it and logs this line, which
-        // shows the sandbox works; it is not an app error.
-        if (where === 'about:srcdoc' && /^Blocked script execution in 'about:srcdoc'/.test(msg.text())) return;
+        // shows the sandbox works; it is not an app error. Chromium reports it without a
+        // location, WebKit with its inspector bootstrap URL, so match on the text only.
+        if (/^Blocked script execution in 'about:srcdoc'/.test(msg.text())) return;
         guard.consoleErrors.push(where ? `${msg.text()} (${where})` : msg.text());
       });
       page.on('pageerror', (err) => {

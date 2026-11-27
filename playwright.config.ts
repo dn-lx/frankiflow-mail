@@ -13,8 +13,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 1,
-  timeout: 60_000,
-  expect: { timeout: 10_000 },
+  timeout: process.env.PW_SLOW ? 120_000 : 60_000,
+  // Playwright WebKit on Windows is several times slower than Chromium; give it room.
+  expect: { timeout: process.env.PW_SLOW ? 25_000 : 10_000 },
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: BASE_URL,
